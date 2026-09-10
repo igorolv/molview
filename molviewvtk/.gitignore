@@ -1,0 +1,21 @@
+# ── molviewvtk: g++ (MSYS2/MINGW64) + VTK, сборка через CMake ──
+
+# Каталоги сборки CMake — и основной, и у пробы.
+build/
+probe/build/
+
+# Продукты компиляции, если окажутся вне build/
+*.o
+*.d
+*.obj
+*.exe
+*.a
+*.lib
+*.dll
+*.pdb
+*.ilk
+
+# CMake оставляет это рядом с исходниками, если настроить сборку в корне
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
