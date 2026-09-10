@@ -391,49 +391,45 @@ void Panels::drawToolbar(Gdiplus::Graphics& g, Fonts& fonts, const render::ViewO
         Action action;
         int value;
         bool active;
-        bool isLabel;       // подпись группы, не кнопка
         bool separatorAfter;
     };
 
+    // все элементы панели — кнопки: подписи групп нет ни у одной, иначе
+    // единственная подпись читается как ещё один переключатель
     const std::vector<Item> items = {
         {"Шары", Action::SetStyle, static_cast<int>(render::Style::BallStick),
-         options.style == render::Style::BallStick, false, false},
+         options.style == render::Style::BallStick, false},
         {"Объём", Action::SetStyle, static_cast<int>(render::Style::SpaceFill),
-         options.style == render::Style::SpaceFill, false, false},
+         options.style == render::Style::SpaceFill, false},
         {"Каркас", Action::SetStyle, static_cast<int>(render::Style::Wire),
-         options.style == render::Style::Wire, false, true},
+         options.style == render::Style::Wire, true},
 
-        {"НЭП", Action::ToggleOption, static_cast<int>(Option::LonePairs), options.showLonePairs, false, false},
-        {"Орбитали", Action::ToggleOption, static_cast<int>(Option::Orbitals), options.showOrbitals, false, false},
-        {"Диполь", Action::ToggleOption, static_cast<int>(Option::Dipole), options.showDipole, false, false},
-        {"Подписи", Action::ToggleOption, static_cast<int>(Option::Labels), options.showLabels, false, true},
+        {"НЭП", Action::ToggleOption, static_cast<int>(Option::LonePairs), options.showLonePairs, false},
+        {"Орбитали", Action::ToggleOption, static_cast<int>(Option::Orbitals), options.showOrbitals, false},
+        {"Диполь", Action::ToggleOption, static_cast<int>(Option::Dipole), options.showDipole, false},
+        {"Подписи", Action::ToggleOption, static_cast<int>(Option::Labels), options.showLabels, true},
 
-        {"Углы", Action::None, 0, false, true, false},
-        {"нет", Action::SetAngleMode, static_cast<int>(render::AngleMode::None),
-         options.showAngles == render::AngleMode::None, false, false},
-        {"атом", Action::SetAngleMode, static_cast<int>(render::AngleMode::Selected),
-         options.showAngles == render::AngleMode::Selected, false, false},
-        {"все", Action::SetAngleMode, static_cast<int>(render::AngleMode::All),
-         options.showAngles == render::AngleMode::All, false, true},
+        {"Без углов", Action::SetAngleMode, static_cast<int>(render::AngleMode::None),
+         options.showAngles == render::AngleMode::None, false},
+        {"У атома", Action::SetAngleMode, static_cast<int>(render::AngleMode::Selected),
+         options.showAngles == render::AngleMode::Selected, false},
+        {"Все углы", Action::SetAngleMode, static_cast<int>(render::AngleMode::All),
+         options.showAngles == render::AngleMode::All, true},
 
-        {"Вращение", Action::ToggleOption, static_cast<int>(Option::AutoRotate), options.autoRotate, false, false},
-        {"Сброс вида", Action::ResetView, 0, false, false, false},
+        {"Вращение", Action::ToggleOption, static_cast<int>(Option::AutoRotate), options.autoRotate, false},
+        {"Сброс вида", Action::ResetView, 0, false, false},
     };
 
     // ширины считаются заранее: панель переносится по строкам, чтобы на узком
     // окне не залезать на панель разбора
     std::vector<double> widths;
-    for (const Item& item : items) {
-        widths.push_back(item.isLabel
-            ? measure(g, toWide(item.text), *fonts.ui(11)).Width + 10
-            : buttonWidth(g, fonts, item.text));
-    }
+    for (const Item& item : items) widths.push_back(buttonWidth(g, fonts, item.text));
 
     const double available = std::max(160.0, sceneRect.w - 28);
     const double rowHeight = 34;
 
-    // Переносятся ЦЕЛЫЕ группы, а не отдельные кнопки: иначе подпись «Углы»
-    // остаётся на одной строке, а её переключатели уезжают на другую.
+    // Переносятся ЦЕЛЫЕ группы, а не отдельные кнопки: иначе переключатели
+    // одного и того же режима расползаются по разным строкам.
     std::vector<std::vector<std::size_t>> groups;
     std::vector<double> groupWidths;
     {
@@ -482,21 +478,13 @@ void Panels::drawToolbar(Gdiplus::Graphics& g, Fonts& fonts, const render::ViewO
     for (std::size_t r = 0; r < rows.size(); r++) {
         double x = barX + (barW - rowWidths[r]) / 2;
         for (std::size_t k : rows[r]) {
-            if (items[k].isLabel) {
-                drawText(g, toWide(items[k].text), *fonts.ui(11), toColor(theme::TEXT_FAINT),
-                         x + 5, rowY + rowHeight / 2 - 7);
-            } else {
-                const RectD rect{x, rowY + 4, widths[k], rowHeight - 8};
-                drawButton(g, fonts, items[k].text, rect, items[k].active, rect.contains(mouseX, mouseY));
-                addHotspot(rect, items[k].action, items[k].value);
-            }
+            const RectD rect{x, rowY + 4, widths[k], rowHeight - 8};
+            drawButton(g, fonts, items[k].text, rect, items[k].active, rect.contains(mouseX, mouseY));
+            addHotspot(rect, items[k].action, items[k].value);
             x += widths[k] + 4;
-            if (items[k].separatorAfter) {
-                Gdiplus::Pen sep(toColor(theme::BORDER), 1.0f);
-                g.DrawLine(&sep, static_cast<Gdiplus::REAL>(x + 4), static_cast<Gdiplus::REAL>(rowY + 8),
-                           static_cast<Gdiplus::REAL>(x + 4), static_cast<Gdiplus::REAL>(rowY + rowHeight - 8));
-                x += 10;
-            }
+            // группы разделены зазором, а не линейкой: при переносе строк
+            // линейка так и норовит остаться висеть в конце строки
+            if (items[k].separatorAfter) x += 10;
         }
         rowY += rowHeight;
     }

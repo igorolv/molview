@@ -65,21 +65,17 @@
             <button data-style="spacefill" class="tool" title="Модель Стюарта — по ван-дер-ваальсовым радиусам">Объём</button>
             <button data-style="wire" class="tool" title="Скелетная модель">Каркас</button>
           </div>
-          <div class="toolbar-sep"></div>
           <div class="toolbar-group">
             <button data-toggle="showLonePairs" class="tool active" title="Неподелённые электронные пары">НЭП</button>
             <button data-toggle="showOrbitals" class="tool" title="Гибридные орбитали">Орбитали</button>
             <button data-toggle="showDipole" class="tool" title="Вектор дипольного момента">Диполь</button>
             <button data-toggle="showLabels" class="tool active" title="Символы элементов">Подписи</button>
           </div>
-          <div class="toolbar-sep"></div>
-          <div class="toolbar-group">
-            <span class="toolbar-label">Углы</span>
-            <button data-angles="none" class="tool" title="Не показывать углы">нет</button>
-            <button data-angles="selected" class="tool active" title="Углы выбранного атома">атом</button>
-            <button data-angles="all" class="tool" title="Все валентные углы">все</button>
+          <div class="toolbar-group" role="group" aria-label="Какие валентные углы показывать">
+            <button data-angles="none" class="tool" title="Не показывать валентные углы">Без углов</button>
+            <button data-angles="selected" class="tool active" title="Углы выбранного атома">У атома</button>
+            <button data-angles="all" class="tool" title="Все валентные углы молекулы">Все углы</button>
           </div>
-          <div class="toolbar-sep"></div>
           <div class="toolbar-group">
             <button data-toggle="autoRotate" class="tool active" title="Автоматическое вращение">⟳</button>
             <button id="btn-reset" class="tool" title="Сбросить поворот">⌖</button>
