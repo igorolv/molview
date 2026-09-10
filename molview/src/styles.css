@@ -66,6 +66,10 @@ body::before {
 /* --- Верхняя панель ------------------------------------------------------ */
 
 .topbar {
+  /* z-index: панели ниже создают свой контекст наложения из-за backdrop-filter,
+     без этого подсказки поиска уходили бы под них */
+  position: relative;
+  z-index: 30;
   display: flex;
   align-items: center;
   gap: 20px;
@@ -434,6 +438,14 @@ body::before {
   border-radius: 0 6px 6px 0;
 }
 .formula-line b { color: var(--violet); }
+
+/* примеры «из учебника» — не про разбираемую молекулу, поэтому отдельной строкой */
+.atom-examples {
+  margin: -4px 12px 10px;
+  font-size: 11.5px;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
 
 .warn {
   margin: 0 12px 11px;

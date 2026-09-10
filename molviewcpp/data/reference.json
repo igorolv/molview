@@ -1,6 +1,6 @@
 {
  "_comment": "Эталон, выгруженный из версии на TypeScript. Порт на C++ должен воспроизводить эти значения. Допуск: длины связей 0,01 Å, углы 0,05°, всё остальное — точное совпадение.",
- "generated": "2026-09-09",
+ "generated": "2026-09-10",
  "count": 89,
  "molecules": [
   {
@@ -184,7 +184,7 @@
   {
    "id": "ammonia",
    "smiles": "N",
-   "formula": "H3N",
+   "formula": "NH3",
    "mass": 17.031,
    "charge": 0,
    "rings": [],
@@ -295,7 +295,7 @@
   {
    "id": "ammonium",
    "smiles": "[NH4+]",
-   "formula": "H4N",
+   "formula": "NH4",
    "mass": 18.039,
    "charge": 1,
    "rings": [],
@@ -450,7 +450,7 @@
   {
    "id": "hydroxide",
    "smiles": "[OH-]",
-   "formula": "HO",
+   "formula": "OH",
    "mass": 17.007,
    "charge": -1,
    "rings": [],
@@ -958,7 +958,7 @@
   {
    "id": "phosphine",
    "smiles": "P",
-   "formula": "H3P",
+   "formula": "PH3",
    "mass": 33.998,
    "charge": 0,
    "rings": [],
@@ -1069,7 +1069,7 @@
   {
    "id": "nitrogen-trifluoride",
    "smiles": "FN(F)F",
-   "formula": "F3N",
+   "formula": "NF3",
    "mass": 71.001,
    "charge": 0,
    "rings": [],
@@ -1180,7 +1180,7 @@
   {
    "id": "sulfur-dioxide",
    "smiles": "O=S=O",
-   "formula": "O2S",
+   "formula": "SO2",
    "mass": 64.058,
    "charge": 0,
    "rings": [],
@@ -1255,7 +1255,7 @@
   {
    "id": "sulfur-trioxide",
    "smiles": "O=S(=O)=O",
-   "formula": "O3S",
+   "formula": "SO3",
    "mass": 80.057,
    "charge": 0,
    "rings": [],
@@ -1830,7 +1830,7 @@
   {
    "id": "phosphorus-trichloride",
    "smiles": "ClP(Cl)Cl",
-   "formula": "Cl3P",
+   "formula": "PCl3",
    "mass": 137.324,
    "charge": 0,
    "rings": [],
@@ -1941,7 +1941,7 @@
   {
    "id": "phosphorus-pentachloride",
    "smiles": "ClP(Cl)(Cl)(Cl)Cl",
-   "formula": "Cl5P",
+   "formula": "PCl5",
    "mass": 208.224,
    "charge": 0,
    "rings": [],
@@ -2148,7 +2148,7 @@
   {
    "id": "sulfur-tetrafluoride",
    "smiles": "FS(F)(F)F",
-   "formula": "F4S",
+   "formula": "SF4",
    "mass": 108.052,
    "charge": 0,
    "rings": [],
@@ -2303,7 +2303,7 @@
   {
    "id": "sulfur-hexafluoride",
    "smiles": "FS(F)(F)(F)(F)F",
-   "formula": "F6S",
+   "formula": "SF6",
    "mass": 146.048,
    "charge": 0,
    "rings": [],
@@ -2681,7 +2681,7 @@
   {
    "id": "xenon-difluoride",
    "smiles": "F[Xe]F",
-   "formula": "F2Xe",
+   "formula": "XeF2",
    "mass": 169.286,
    "charge": 0,
    "rings": [],
@@ -2756,7 +2756,7 @@
   {
    "id": "xenon-tetrafluoride",
    "smiles": "F[Xe](F)(F)F",
-   "formula": "F4Xe",
+   "formula": "XeF4",
    "mass": 207.282,
    "charge": 0,
    "rings": [],
@@ -2911,7 +2911,7 @@
   {
    "id": "iodine-pentafluoride",
    "smiles": "F[I](F)(F)(F)F",
-   "formula": "F5I",
+   "formula": "IF5",
    "mass": 221.894,
    "charge": 0,
    "rings": [],
@@ -3554,7 +3554,7 @@
   {
    "id": "sulfate",
    "smiles": "[O-]S(=O)(=O)[O-]",
-   "formula": "O4S",
+   "formula": "SO4",
    "mass": 96.056,
    "charge": -2,
    "rings": [],
@@ -3709,7 +3709,7 @@
   {
    "id": "phosphate",
    "smiles": "[O-]P(=O)([O-])[O-]",
-   "formula": "O4P",
+   "formula": "PO4",
    "mass": 94.97,
    "charge": -3,
    "rings": [],
@@ -3864,7 +3864,7 @@
   {
    "id": "sulfuric-acid",
    "smiles": "OS(=O)(=O)O",
-   "formula": "H2O4S",
+   "formula": "H2SO4",
    "mass": 98.072,
    "charge": 0,
    "rings": [],
@@ -4075,7 +4075,7 @@
   {
    "id": "phosphoric-acid",
    "smiles": "OP(=O)(O)O",
-   "formula": "H3O4P",
+   "formula": "H3PO4",
    "mass": 97.994,
    "charge": 0,
    "rings": [],
@@ -4314,7 +4314,7 @@
   {
    "id": "hydrogen-cyanide",
    "smiles": "C#N",
-   "formula": "CHN",
+   "formula": "HCN",
    "mass": 27.026,
    "charge": 0,
    "rings": [],
@@ -4464,7 +4464,7 @@
   {
    "id": "silane",
    "smiles": "[SiH4]",
-   "formula": "H4Si",
+   "formula": "SiH4",
    "mass": 32.117,
    "charge": 0,
    "rings": [],
@@ -4619,7 +4619,7 @@
   {
    "id": "hydrogen-chloride",
    "smiles": "Cl",
-   "formula": "ClH",
+   "formula": "HCl",
    "mass": 36.458,
    "charge": 0,
    "rings": [],

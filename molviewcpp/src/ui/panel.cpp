@@ -711,10 +711,22 @@ double Panels::drawAtomCard(Gdiplus::Graphics& g, Fonts& fonts, const AppState& 
     const double formulaHeight = measureWrapped(g, toWide(formulaLine), *fonts.ui(11), inner);
     const double orderHeight = orderLine.empty()
         ? 0 : measureWrapped(g, toWide("Порядок связей: " + orderLine), *fonts.ui(11), inner) + 6;
+    // примеры «из учебника» — не про разбираемую молекулу, поэтому отдельной строкой;
+    // у SF₆, XeF₂ и подобных единственный пример — сама эта молекула, тогда строки нет
+    const std::string exampleLine = geometry.examples.empty() || geometry.examples == a.formulaHtml
+        ? std::string() : "Такое же окружение атома: " + geometry.examples + ".";
+    const double exampleHeight = exampleLine.empty()
+        ? 0 : measureWrapped(g, toWide(exampleLine), *fonts.ui(11), inner) + 6;
     const double warnHeight = atom.warning.empty()
         ? 0 : measureWrapped(g, toWide(atom.warning), *fonts.ui(11), inner - 16) + 18;
-    const double height = 52 + static_cast<double>(rows.size()) * 19 + 10
-                        + formulaHeight + orderHeight + warnHeight + 16;
+    // подпись под названием атома переносится по словам: в вебе это делает браузер,
+    // здесь высоту шапки приходится считать самим
+    const std::string subLine = "атом №" + std::to_string(atom.id + 1) + " · " + geometry.hint;
+    const double subWidth = w - 52 - 52;
+    const double headHeight = std::max(52.0,
+        30.0 + measureWrapped(g, toWide(subLine), *fonts.ui(10.5), subWidth) + 10.0);
+    const double height = headHeight + static_cast<double>(rows.size()) * 19 + 10
+                        + formulaHeight + orderHeight + exampleHeight + warnHeight + 16;
 
     fillRoundRect(g, x, y, w, height, 10, toColor(theme::SURFACE_RAISED));
     strokeRoundRect(g, x, y, w, height, 10,
@@ -730,13 +742,12 @@ double Panels::drawAtomCard(Gdiplus::Graphics& g, Fonts& fonts, const AppState& 
 
     drawText(g, toWide(capitalize(info.name) + chargeSuffix(atom.charge)), *fonts.ui(13, true),
              toColor(theme::TEXT), x + 52, y + 13);
-    const std::string hint = geometry.hint.substr(0, geometry.hint.find(':'));
-    drawText(g, toWide("атом №" + std::to_string(atom.id + 1) + " · " + hint), *fonts.ui(10.5),
-             toColor(theme::TEXT_FAINT), x + 52, y + 30);
+    drawWrapped(g, toWide(subLine), *fonts.ui(10.5), toColor(theme::TEXT_FAINT),
+                x + 52, y + 30, subWidth);
     drawText(g, toWide(atom.hybrid), *fonts.ui(14, true), toColor(theme::ACCENT_VIOLET),
              x + w - 12, y + 16, Align::Right);
 
-    double ry = y + 52;
+    double ry = y + headHeight;
     for (const auto& row : rows) {
         drawText(g, toWide(row.first), *fonts.ui(11), toColor(theme::TEXT_DIM), x + 12, ry);
         drawText(g, toWide(row.second), *fonts.ui(11, true), toColor(theme::TEXT), x + w - 12, ry, Align::Right);
@@ -751,6 +762,12 @@ double Panels::drawAtomCard(Gdiplus::Graphics& g, Fonts& fonts, const AppState& 
         drawWrapped(g, toWide("Порядок связей: " + orderLine), *fonts.ui(11),
                     toColor(theme::TEXT_DIM), x + 12, ry, inner);
         ry += orderHeight - 6;
+    }
+    if (!exampleLine.empty()) {
+        ry += 6;
+        drawWrapped(g, toWide(exampleLine), *fonts.ui(11), toColor(theme::TEXT_FAINT),
+                    x + 12, ry, inner);
+        ry += exampleHeight - 6;
     }
     if (!atom.warning.empty()) {
         ry += 8;

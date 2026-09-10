@@ -41,13 +41,51 @@ std::string toSup(const std::string& s) {
 }
 
 /**
- * Порядок Хилла: сначала углерод, затем водород, затем остальные по алфавиту.
- * Если углерода нет — всё по алфавиту.
+ * Электроотрицательностный ряд элементов (IUPAC, Red Book, табл. VI).
+ * В формуле неорганического вещества первым пишется элемент, стоящий в ряду
+ * левее (более электроположительный), поэтому получается SO₂, PCl₃, XeF₂,
+ * а кислород и фтор оказываются в конце. Водород стоит между азотом и серой:
+ * отсюда NH₃, PH₃, SiH₄, но H₂O, H₂S, HCl.
+ */
+const char* const EN_ORDER[] = {
+    "Rn", "Xe", "Kr", "Ar", "Ne", "He",
+    "Fr", "Cs", "Rb", "K",  "Na", "Li",
+    "Ra", "Ba", "Sr", "Ca", "Mg", "Be",
+    "Tl", "In", "Ga", "Al", "B",
+    "Pb", "Sn", "Ge", "Si", "C",
+    "Bi", "Sb", "As", "P",  "N",
+    "H",
+    "Po", "Te", "Se", "S",
+    "At", "I",  "Br", "Cl",
+    "O",  "F",
+};
+
+/** Место элемента в ряду; для элементов вне списка — −1, то есть в самое начало. */
+int enRank(const std::string& symbol) {
+    const int n = static_cast<int>(sizeof(EN_ORDER) / sizeof(EN_ORDER[0]));
+    for (int i = 0; i < n; ++i) {
+        if (symbol == EN_ORDER[i]) return i;
+    }
+    return -1;
+}
+
+/**
+ * Порядок элементов в брутто-формуле.
  *
- * Сравнение обычное побайтовое: символы элементов — заглавная буква плюс
+ * Для органики — система Хилла (C, H, остальное по алфавиту): C₂H₆O, C₆H₆.
+ * Для неорганики — электроотрицательностный ряд: SO₂, PCl₃, NH₃, а не
+ * алфавитные O₂S, Cl₃P, H₃N. У кислородсодержащих кислот водород по традиции
+ * выносится вперёд: H₂SO₄, HNO₃, H₃PO₄. Немногие исключения (OH⁻ вместо HO⁻,
+ * HCN вместо хилловского CHN) перечислены явно.
+ *
+ * Сравнение строк обычное побайтовое: символы элементов — заглавная буква плюс
  * необязательная строчная, и для такого набора оно совпадает с localeCompare.
  */
-std::vector<std::string> hillOrder(const std::vector<std::pair<std::string, int>>& counts) {
+std::vector<std::string> formulaOrder(const std::vector<std::pair<std::string, int>>& counts) {
+    const std::string key = compositionKey(counts);
+    if (key == "H1O1") return {"O", "H"};
+    if (key == "C1H1N1") return {"H", "C", "N"};
+
     std::vector<std::string> symbols;
     for (const auto& item : counts) symbols.push_back(item.first);
 
@@ -71,7 +109,21 @@ std::vector<std::string> hillOrder(const std::vector<std::pair<std::string, int>
         return order;
     }
 
-    std::sort(symbols.begin(), symbols.end());
+    std::sort(symbols.begin(), symbols.end(),
+              [](const std::string& a, const std::string& b) {
+                  const int ra = enRank(a);
+                  const int rb = enRank(b);
+                  return ra != rb ? ra < rb : a < b;
+              });
+
+    // кислота: есть и водород, и кислород, и ещё хотя бы один элемент
+    if (symbols.size() > 2 && present("H") && present("O")) {
+        std::vector<std::string> order{"H"};
+        for (const std::string& s : symbols) {
+            if (s != "H") order.push_back(s);
+        }
+        return order;
+    }
     return symbols;
 }
 
@@ -116,7 +168,7 @@ double molecularMass(const Molecule& mol) {
 std::string plainFormula(const Molecule& mol) {
     const auto counts = composition(mol);
     std::string out;
-    for (const std::string& s : hillOrder(counts)) {
+    for (const std::string& s : formulaOrder(counts)) {
         const int n = countOf(counts, s);
         out += s;
         if (n > 1) out += std::to_string(n);
@@ -127,7 +179,7 @@ std::string plainFormula(const Molecule& mol) {
 std::string prettyFormula(const Molecule& mol) {
     const auto counts = composition(mol);
     std::string s;
-    for (const std::string& sym : hillOrder(counts)) {
+    for (const std::string& sym : formulaOrder(counts)) {
         const int n = countOf(counts, sym);
         s += sym;
         if (n > 1) s += toSub(n);

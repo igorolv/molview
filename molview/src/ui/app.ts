@@ -405,6 +405,8 @@ export class App {
     const info = element(atom.el);
     const active = this.renderer.selectedAtom === atom.id || this.renderer.hoveredAtom === atom.id;
     const geometry = geometryFor(atom.sigma, atom.lonePairs);
+    // у SF₆, XeF₂ и подобных единственный пример — сама разбираемая молекула: строка ни о чём
+    const showExamples = geometry.examples !== '' && geometry.examples !== a.formulaHtml;
 
     const rows: [string, string, boolean][] = [
       ['σ-связей', String(atom.sigma), true],
@@ -436,7 +438,7 @@ export class App {
           <div class="atom-badge" style="background:${info.color}">${escapeHtml(atom.el)}</div>
           <div>
             <div class="atom-title">${escapeHtml(capitalize(info.name))}${chargeSuffix(atom.charge)}</div>
-            <div class="atom-sub">атом №${atom.id + 1} · ${escapeHtml(geometry.hint.split(':')[0])}</div>
+            <div class="atom-sub">атом №${atom.id + 1} · ${escapeHtml(geometry.hint)}</div>
           </div>
           <div class="atom-hyb">${escapeHtml(atom.hybrid)}</div>
         </div>
@@ -448,6 +450,7 @@ export class App {
           → <b>${escapeHtml(atom.hybrid)}</b>${atom.steric >= 2 && atom.steric <= 7 ? `: ${escapeHtml(hybridExplanation(atom.steric))}` : ''}
         </div>
         ${orderNote}
+        ${showExamples ? `<div class="atom-examples">Такое же окружение атома: ${escapeHtml(geometry.examples)}.</div>` : ''}
         ${atom.warning ? `<div class="warn">${escapeHtml(atom.warning)}</div>` : ''}
       </div>`;
   }

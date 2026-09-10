@@ -2,8 +2,7 @@ import type { Molecule } from './types';
 import { element, isKnownElement } from './periodic';
 
 /**
- * Брутто-формула в системе Хилла: сначала углерод, затем водород,
- * затем остальные элементы по алфавиту. Если углерода нет — всё по алфавиту.
+ * Состав молекулы: сколько атомов каждого элемента.
  */
 export function composition(mol: Molecule): Map<string, number> {
   const counts = new Map<string, number>();
@@ -21,13 +20,67 @@ export function molecularMass(mol: Molecule): number {
   return mol.atoms.reduce((s, a) => s + element(a.el).mass, 0);
 }
 
-function hillOrder(counts: Map<string, number>): string[] {
+/**
+ * Электроотрицательностный ряд элементов (IUPAC, Red Book, табл. VI).
+ * В формуле неорганического вещества первым пишется элемент, стоящий в ряду
+ * левее (более электроположительный), поэтому получается SO₂, PCl₃, XeF₂,
+ * а кислород и фтор оказываются в конце. Водород стоит между азотом и серой:
+ * отсюда NH₃, PH₃, SiH₄, но H₂O, H₂S, HCl.
+ */
+const EN_ORDER = [
+  'Rn', 'Xe', 'Kr', 'Ar', 'Ne', 'He',
+  'Fr', 'Cs', 'Rb', 'K', 'Na', 'Li',
+  'Ra', 'Ba', 'Sr', 'Ca', 'Mg', 'Be',
+  'Tl', 'In', 'Ga', 'Al', 'B',
+  'Pb', 'Sn', 'Ge', 'Si', 'C',
+  'Bi', 'Sb', 'As', 'P', 'N',
+  'H',
+  'Po', 'Te', 'Se', 'S',
+  'At', 'I', 'Br', 'Cl',
+  'O', 'F',
+];
+
+const enRank = new Map(EN_ORDER.map((s, i) => [s, i]));
+
+/** Элементы вне ряда (металлы середины таблицы) — по возрастанию ЭО, как и весь ряд. */
+const rankOf = (symbol: string): number => enRank.get(symbol) ?? -1;
+
+/**
+ * Вещества, которые по традиции записывают вопреки общему правилу:
+ * гидроксид-ион OH⁻ (а не HO⁻), циановодород HCN (а не CHN по Хиллу).
+ * Ключ — канонический ключ состава из compositionKey.
+ */
+const CONVENTIONAL_ORDER: Record<string, string[]> = {
+  H1O1: ['O', 'H'],
+  C1H1N1: ['H', 'C', 'N'],
+};
+
+/**
+ * Порядок элементов в брутто-формуле.
+ *
+ * Для органики — система Хилла (C, H, остальное по алфавиту): C₂H₆O, C₆H₆.
+ * Для неорганики — электроотрицательностный ряд: SO₂, PCl₃, NH₃, а не
+ * алфавитные O₂S, Cl₃P, H₃N. У кислородсодержащих кислот водород по традиции
+ * выносится вперёд: H₂SO₄, HNO₃, H₃PO₄.
+ */
+function formulaOrder(counts: Map<string, number>): string[] {
+  const conventional = CONVENTIONAL_ORDER[compositionKey(counts)];
+  if (conventional) return conventional;
+
   const symbols = [...counts.keys()];
-  const rest = symbols.filter((s) => s !== 'C' && s !== 'H').sort((a, b) => a.localeCompare(b));
+
   if (counts.has('C')) {
+    const rest = symbols.filter((s) => s !== 'C' && s !== 'H').sort((a, b) => a.localeCompare(b));
     return ['C', ...(counts.has('H') ? ['H'] : []), ...rest];
   }
-  return symbols.sort((a, b) => a.localeCompare(b));
+
+  const ordered = symbols.sort((a, b) => rankOf(a) - rankOf(b) || a.localeCompare(b));
+
+  // кислота: есть и водород, и кислород, и ещё хотя бы один элемент
+  if (counts.size > 2 && counts.has('H') && counts.has('O')) {
+    return ['H', ...ordered.filter((s) => s !== 'H')];
+  }
+  return ordered;
 }
 
 const SUB = ['₀', '₁', '₂', '₃', '₄', '₅', '₆', '₇', '₈', '₉'];
@@ -36,16 +89,16 @@ const SUP: Record<string, string> = { '0': '⁰', '1': '¹', '2': '²', '3': '³
 const toSub = (n: number): string => String(n).split('').map((d) => SUB[+d]).join('');
 const toSup = (s: string): string => s.split('').map((c) => SUP[c] ?? c).join('');
 
-/** Формула обычными символами: "C2H6O". Используется для поиска. */
+/** Формула обычными символами: "C2H6O", "H2SO4". Используется для поиска. */
 export function plainFormula(mol: Molecule): string {
   const counts = composition(mol);
-  return hillOrder(counts).map((s) => s + (counts.get(s)! > 1 ? counts.get(s) : '')).join('');
+  return formulaOrder(counts).map((s) => s + (counts.get(s)! > 1 ? counts.get(s) : '')).join('');
 }
 
 /** Формула с настоящими подстрочными цифрами и зарядом: "C₂H₆O", "NO₃⁻". */
 export function prettyFormula(mol: Molecule): string {
   const counts = composition(mol);
-  let s = hillOrder(counts).map((sym) => sym + (counts.get(sym)! > 1 ? toSub(counts.get(sym)!) : '')).join('');
+  let s = formulaOrder(counts).map((sym) => sym + (counts.get(sym)! > 1 ? toSub(counts.get(sym)!) : '')).join('');
   const q = totalCharge(mol);
   if (q !== 0) {
     const magnitude = Math.abs(q) > 1 ? String(Math.abs(q)) : '';

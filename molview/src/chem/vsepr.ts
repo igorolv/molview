@@ -66,7 +66,14 @@ export interface GeometryInfo {
   molecularGeom: string;
   /** Идеальный угол электронной геометрии, «из учебника». */
   idealAngle: number | null;
+  /** Из чего складывается окружение атома. Про сам атом, без примеров. */
   hint: string;
+  /**
+   * Вещества с таким же окружением центрального атома. Это именно примеры
+   * «из учебника», к разбираемой молекуле они отношения не имеют, поэтому
+   * в интерфейсе выводятся отдельной строкой и с явной пометкой.
+   */
+  examples: string;
 }
 
 const FALLBACK: GeometryInfo = {
@@ -74,34 +81,35 @@ const FALLBACK: GeometryInfo = {
   molecularGeom: 'не определена',
   idealAngle: null,
   hint: 'Стерическое число выходит за рамки модели ОЭПВО.',
+  examples: '',
 };
 
 /** Ключ: «число σ-связей : число неподелённых пар». */
 const GEOMETRY: Record<string, GeometryInfo> = {
-  '1:0': { electronGeom: 'одна связь', molecularGeom: 'концевой атом', idealAngle: null, hint: 'У атома единственный сосед — валентного угла нет.' },
-  '1:1': { electronGeom: 'линейная', molecularGeom: 'концевой атом', idealAngle: null, hint: 'Одна связь и одна неподелённая пара (азот в HC≡N).' },
-  '1:2': { electronGeom: 'тригональная', molecularGeom: 'концевой атом', idealAngle: null, hint: 'Одна связь и две пары — например, кислород карбонильной группы C=O.' },
-  '1:3': { electronGeom: 'тетраэдрическая', molecularGeom: 'концевой атом', idealAngle: null, hint: 'Одна связь и три пары — галогены, гидроксид-ион.' },
+  '1:0': { electronGeom: 'одна связь', molecularGeom: 'концевой атом', idealAngle: null, hint: 'Единственный сосед — валентного угла нет.', examples: 'водород в H₂O и CH₄' },
+  '1:1': { electronGeom: 'линейная', molecularGeom: 'концевой атом', idealAngle: null, hint: 'Одна связь и одна неподелённая пара.', examples: 'азот в HC≡N, углерод в CO' },
+  '1:2': { electronGeom: 'тригональная', molecularGeom: 'концевой атом', idealAngle: null, hint: 'Одна связь и две неподелённые пары.', examples: 'концевой кислород двойной связи — в C=O, SO₂, NO₃⁻' },
+  '1:3': { electronGeom: 'тетраэдрическая', molecularGeom: 'концевой атом', idealAngle: null, hint: 'Одна связь и три неподелённые пары.', examples: 'галогены в HCl и CCl₄, кислород в OH⁻ и NO₃⁻' },
 
-  '2:0': { electronGeom: 'линейная', molecularGeom: 'линейная', idealAngle: 180, hint: 'Две электронные группы расходятся на 180°: CO₂, BeCl₂, ацетилен.' },
-  '2:1': { electronGeom: 'тригональная', molecularGeom: 'угловая', idealAngle: 120, hint: 'Две связи и одна пара — угловая молекула: SO₂, озон, нитрит-ион.' },
-  '2:2': { electronGeom: 'тетраэдрическая', molecularGeom: 'угловая', idealAngle: 109.5, hint: 'Две связи и две пары: вода, сероводород, спирты и эфиры.' },
-  '2:3': { electronGeom: 'тригонально-бипирамидальная', molecularGeom: 'линейная', idealAngle: 180, hint: 'Три пары уходят в экватор, связи остаются на оси: XeF₂.' },
+  '2:0': { electronGeom: 'линейная', molecularGeom: 'линейная', idealAngle: 180, hint: 'Две связи без пар — они расходятся на 180°.', examples: 'CO₂, BeCl₂, ацетилен' },
+  '2:1': { electronGeom: 'тригональная', molecularGeom: 'угловая', idealAngle: 120, hint: 'Две связи и одна пара — частица угловая.', examples: 'SO₂, озон, нитрит-ион' },
+  '2:2': { electronGeom: 'тетраэдрическая', molecularGeom: 'угловая', idealAngle: 109.5, hint: 'Две связи и две пары — частица угловая.', examples: 'вода, сероводород, спирты и эфиры' },
+  '2:3': { electronGeom: 'тригонально-бипирамидальная', molecularGeom: 'линейная', idealAngle: 180, hint: 'Две связи и три пары: пары в экваторе, связи на оси.', examples: 'XeF₂' },
 
-  '3:0': { electronGeom: 'тригональная', molecularGeom: 'плоская треугольная', idealAngle: 120, hint: 'Плоский треугольник: BF₃, SO₃, нитрат-ион, любой sp²-углерод.' },
-  '3:1': { electronGeom: 'тетраэдрическая', molecularGeom: 'тригонально-пирамидальная', idealAngle: 109.5, hint: 'Пирамида: аммиак, PCl₃, ион гидроксония, сера в ДМСО.' },
-  '3:2': { electronGeom: 'тригонально-бипирамидальная', molecularGeom: 'Т-образная', idealAngle: 90, hint: 'Обе пары в экваторе, связи образуют букву «Т»: ClF₃.' },
+  '3:0': { electronGeom: 'тригональная', molecularGeom: 'плоская треугольная', idealAngle: 120, hint: 'Три связи без пар — плоский треугольник.', examples: 'BF₃, SO₃, нитрат-ион, любой sp²-углерод' },
+  '3:1': { electronGeom: 'тетраэдрическая', molecularGeom: 'тригонально-пирамидальная', idealAngle: 109.5, hint: 'Три связи и одна пара — пирамида.', examples: 'аммиак, PCl₃, ион гидроксония, сера в ДМСО' },
+  '3:2': { electronGeom: 'тригонально-бипирамидальная', molecularGeom: 'Т-образная', idealAngle: 90, hint: 'Три связи и две пары: обе пары в экваторе, форма «Т».', examples: 'ClF₃' },
 
-  '4:0': { electronGeom: 'тетраэдрическая', molecularGeom: 'тетраэдрическая', idealAngle: 109.5, hint: 'Правильный тетраэдр: метан, ион аммония, сульфат-ион.' },
-  '4:1': { electronGeom: 'тригонально-бипирамидальная', molecularGeom: 'качели (дисфеноид)', idealAngle: 120, hint: 'Пара занимает экваториальную позицию: SF₄.' },
-  '4:2': { electronGeom: 'октаэдрическая', molecularGeom: 'квадратная', idealAngle: 90, hint: 'Пары становятся транс, связи образуют плоский квадрат: XeF₄.' },
+  '4:0': { electronGeom: 'тетраэдрическая', molecularGeom: 'тетраэдрическая', idealAngle: 109.5, hint: 'Четыре связи без пар — правильный тетраэдр.', examples: 'метан, ион аммония, сульфат-ион' },
+  '4:1': { electronGeom: 'тригонально-бипирамидальная', molecularGeom: 'качели (дисфеноид)', idealAngle: 120, hint: 'Четыре связи и одна пара: пара в экваторе, форма качелей.', examples: 'SF₄' },
+  '4:2': { electronGeom: 'октаэдрическая', molecularGeom: 'квадратная', idealAngle: 90, hint: 'Четыре связи и две пары: пары транс, связи в квадрате.', examples: 'XeF₄' },
 
-  '5:0': { electronGeom: 'тригонально-бипирамидальная', molecularGeom: 'тригонально-бипирамидальная', idealAngle: 120, hint: 'Две неравноценные позиции: 3 экваториальные (120°) и 2 аксиальные (90°): PCl₅.' },
-  '5:1': { electronGeom: 'октаэдрическая', molecularGeom: 'квадратно-пирамидальная', idealAngle: 90, hint: 'Пара прижимает основание пирамиды: IF₅, BrF₅.' },
+  '5:0': { electronGeom: 'тригонально-бипирамидальная', molecularGeom: 'тригонально-бипирамидальная', idealAngle: 120, hint: 'Пять связей: 3 экваториальные и 2 аксиальные.', examples: 'PCl₅' },
+  '5:1': { electronGeom: 'октаэдрическая', molecularGeom: 'квадратно-пирамидальная', idealAngle: 90, hint: 'Пять связей и одна пара: квадратная пирамида.', examples: 'IF₅, BrF₅' },
 
-  '6:0': { electronGeom: 'октаэдрическая', molecularGeom: 'октаэдрическая', idealAngle: 90, hint: 'Правильный октаэдр, все связи равноценны: SF₆.' },
+  '6:0': { electronGeom: 'октаэдрическая', molecularGeom: 'октаэдрическая', idealAngle: 90, hint: 'Шесть равноценных связей — правильный октаэдр.', examples: 'SF₆' },
 
-  '7:0': { electronGeom: 'пентагонально-бипирамидальная', molecularGeom: 'пентагонально-бипирамидальная', idealAngle: 72, hint: 'Редкая геометрия: IF₇.' },
+  '7:0': { electronGeom: 'пентагонально-бипирамидальная', molecularGeom: 'пентагонально-бипирамидальная', idealAngle: 72, hint: 'Семь связей — редкая геометрия.', examples: 'IF₇' },
 };
 
 export function geometryFor(sigma: number, lonePairs: number): GeometryInfo {
