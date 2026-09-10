@@ -1,0 +1,21 @@
+# ── molview: Vite + TypeScript ──
+
+# Зависимости (package-lock.json остаётся в репозитории)
+node_modules/
+
+# Результат сборки: собирается через `npm run build`
+dist/
+
+# Кэши инструментов
+.vite/
+node_modules/.vite/
+*.tsbuildinfo
+
+# Документы, которые генерирует `npm run docs` из docs/*.cjs.
+# Сами генераторы версионируются, готовые файлы — нет.
+docs/*.docx
+docs/*.pptx
+
+# Выгрузка справочника: `npm run reference` пишет reference.json в корень проекта.
+# Рабочая копия лежит в molviewcpp/data/ и версионируется там.
+/reference.json

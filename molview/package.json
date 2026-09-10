@@ -1,0 +1,28 @@
+{
+  "name": "molview",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Визуализатор строения молекул: валентные углы и гибридизация по теории Гиллеспи (VSEPR)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit",
+    "test": "tsx scripts/selftest.ts && tsx scripts/smilestest.ts",
+    "test:db": "tsx scripts/selftest.ts",
+    "test:smiles": "tsx scripts/smilestest.ts",
+    "docs": "node docs/make-zapiska.cjs && node docs/make-presentation.cjs",
+    "docs:zapiska": "node docs/make-zapiska.cjs",
+    "docs:presentation": "node docs/make-presentation.cjs",
+    "reference": "tsx scripts/dump-reference.ts"
+  },
+  "devDependencies": {
+    "docx": "^9.7.1",
+    "pptxgenjs": "^4.0.1",
+    "tsx": "^4.23.13",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "vite-plugin-singlefile": "^2.0.3"
+  }
+}

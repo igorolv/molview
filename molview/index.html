@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Строение молекул — валентные углы и гибридизация</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='30' r='16' fill='%235eead4'/%3E%3Ccircle cx='24' cy='72' r='12' fill='%23a78bfa'/%3E%3Ccircle cx='76' cy='72' r='12' fill='%23a78bfa'/%3E%3C/svg%3E" />
+</head>
+<body>
+  <div class="app">
+
+    <header class="topbar">
+      <div class="brand">
+        <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true">
+          <line x1="24" y1="16" x2="11" y2="36" />
+          <line x1="24" y1="16" x2="37" y2="36" />
+          <line x1="11" y1="36" x2="37" y2="36" />
+          <circle cx="24" cy="16" r="7" class="mark-center" />
+          <circle cx="11" cy="36" r="5" />
+          <circle cx="37" cy="36" r="5" />
+        </svg>
+        <div class="brand-text">
+          <div class="brand-title">Строение молекул</div>
+          <div class="brand-sub">валентные углы и гибридизация по теории Гиллеспи</div>
+        </div>
+      </div>
+
+      <div class="search">
+        <svg class="search-icon" viewBox="0 0 24 24" aria-hidden="true">
+          <circle cx="11" cy="11" r="7" /><line x1="16.5" y1="16.5" x2="21" y2="21" />
+        </svg>
+        <input
+          id="query"
+          type="text"
+          autocomplete="off"
+          spellcheck="false"
+          placeholder="Формула, название или SMILES — например C2H6O, бензол, CCO"
+        />
+        <button id="search-go" class="search-go" title="Построить">↵</button>
+        <div id="suggest" class="suggest" hidden></div>
+      </div>
+
+      <div class="topbar-actions">
+        <button id="btn-random" class="ghost-btn" title="Случайная молекула">Наугад</button>
+        <button id="btn-help" class="ghost-btn" title="Справка">?</button>
+      </div>
+    </header>
+
+    <div class="layout">
+
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-title">Справочник</div>
+        <div id="catalog" class="catalog"></div>
+      </aside>
+
+      <main class="stage">
+        <canvas id="scene"></canvas>
+
+        <div class="stage-heading" id="stage-heading"></div>
+        <div class="stage-hint">перетаскивание — поворот · колесо — масштаб · щелчок по атому — разбор</div>
+
+        <div class="toolbar" id="toolbar">
+          <div class="toolbar-group" role="group" aria-label="Стиль модели">
+            <button data-style="ballstick" class="tool active" title="Шаростержневая модель">Шары</button>
+            <button data-style="spacefill" class="tool" title="Модель Стюарта — по ван-дер-ваальсовым радиусам">Объём</button>
+            <button data-style="wire" class="tool" title="Скелетная модель">Каркас</button>
+          </div>
+          <div class="toolbar-sep"></div>
+          <div class="toolbar-group">
+            <button data-toggle="showLonePairs" class="tool active" title="Неподелённые электронные пары">НЭП</button>
+            <button data-toggle="showOrbitals" class="tool" title="Гибридные орбитали">Орбитали</button>
+            <button data-toggle="showDipole" class="tool" title="Вектор дипольного момента">Диполь</button>
+            <button data-toggle="showLabels" class="tool active" title="Символы элементов">Подписи</button>
+          </div>
+          <div class="toolbar-sep"></div>
+          <div class="toolbar-group">
+            <span class="toolbar-label">Углы</span>
+            <button data-angles="none" class="tool" title="Не показывать углы">нет</button>
+            <button data-angles="selected" class="tool active" title="Углы выбранного атома">атом</button>
+            <button data-angles="all" class="tool" title="Все валентные углы">все</button>
+          </div>
+          <div class="toolbar-sep"></div>
+          <div class="toolbar-group">
+            <button data-toggle="autoRotate" class="tool active" title="Автоматическое вращение">⟳</button>
+            <button id="btn-reset" class="tool" title="Сбросить поворот">⌖</button>
+            <button id="btn-png" class="tool" title="Сохранить изображение">PNG</button>
+          </div>
+        </div>
+
+        <div class="legend" id="legend"></div>
+      </main>
+
+      <aside class="panel" id="panel"></aside>
+    </div>
+  </div>
+
+  <div class="modal" id="help" hidden>
+    <div class="modal-card">
+      <button class="modal-close" id="help-close">×</button>
+      <h2>Как пользоваться</h2>
+
+      <h3>Что можно вводить</h3>
+      <ul>
+        <li><b>Брутто-формулу</b> — <code>H2O</code>, <code>C2H6O</code>, <code>XeF4</code>.
+          Если формуле отвечает несколько веществ, программа покажет все изомеры.</li>
+        <li><b>Название по-русски</b> — <code>бензол</code>, <code>уксусная кислота</code>, <code>аммиак</code>.</li>
+        <li><b>Строение в виде SMILES</b> — <code>CCO</code> (этанол), <code>c1ccccc1</code> (бензол),
+          <code>CC(=O)O</code> (уксусная кислота). Так можно построить молекулу, которой нет в базе.</li>
+      </ul>
+
+      <h3>Краткий синтаксис SMILES</h3>
+      <ul>
+        <li>Атомы углерода пишутся просто буквой <code>C</code>, водороды подставляются сами:
+          <code>CCC</code> — пропан.</li>
+        <li>Кратные связи: <code>=</code> и <code>#</code>. <code>C=C</code> — этилен, <code>C#N</code> — циановодород.</li>
+        <li>Ветвление — круглые скобки: <code>CC(C)C</code> — изобутан.</li>
+        <li>Цикл — одинаковые цифры в начале и конце: <code>C1CCCCC1</code> — циклогексан.</li>
+        <li>Ароматическое кольцо — строчные буквы: <code>c1ccccc1</code> — бензол.</li>
+        <li>Заряд и необычный элемент — в квадратных скобках: <code>[NH4+]</code>, <code>[O-]</code>, <code>F[Xe]F</code>.</li>
+      </ul>
+
+      <h3>Что означают цвета</h3>
+      <ul>
+        <li><span class="dot dot-teal"></span> бирюзовая дуга — валентный угол;
+            <span class="dot dot-rose"></span> розовая — угол задан геометрией цикла.</li>
+        <li><span class="dot dot-sky"></span> голубые облака — неподелённые электронные пары.</li>
+        <li><span class="dot dot-violet"></span> фиолетовые лепестки — гибридные орбитали.</li>
+        <li>Пунктирная линия внутри связи — дробный порядок связи (делокализация).</li>
+      </ul>
+
+      <h3>Управление</h3>
+      <ul>
+        <li>Перетаскивание мышью — поворот, колесо — масштаб, двойной щелчок — сброс.</li>
+        <li>Щелчок по атому — подробный разбор именно этого атома.</li>
+      </ul>
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>

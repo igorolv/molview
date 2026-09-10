@@ -1,0 +1,35 @@
+# ── Общее для обоих проектов (molview — TypeScript, molviewcpp — C++) ──
+
+# Операционная система
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Редакторы и IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+!.vscode/launch.json
+.idea/
+*.swp
+*.swo
+*~
+
+# Локальные настройки Claude Code (launch.json — общий, его коммитим)
+.claude/settings.local.json
+
+# Переменные окружения и локальные секреты
+.env
+.env.*
+!.env.example
+
+# Логи и временные файлы
+*.log
+npm-debug.log*
+yarn-error.log*
+*.tmp
+*.bak
+*.orig
+*.rej
