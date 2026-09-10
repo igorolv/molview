@@ -33,6 +33,23 @@ struct ViewOptions {
     Style style = Style::BallStick;
 };
 
+/**
+ * Камера, которой пользуется собственный рендер. Отдаётся наружу, чтобы сцена
+ * на VTK смотрела ровно туда же: иначе шары разъедутся с дугами углов и
+ * подписями, которые по-прежнему рисует GDI+.
+ */
+struct CameraParams {
+    /** Поворот мира в систему камеры. */
+    chem::Mat3 rotation = chem::IDENTITY;
+    /** Расстояние от глаза до центра сцены, Å. */
+    double distance = 0;
+    /** Фокусное расстояние в пикселях. */
+    double focal = 0;
+    /** Радиус сцены, Å — по нему считаются плоскости отсечения. */
+    double sceneRadius = 0;
+    RectD viewport;
+};
+
 class MoleculeRenderer {
 public:
     /** Разбор принадлежит приложению; рендер только читает его. */
@@ -48,6 +65,23 @@ public:
     void tick(double dtMs);
 
     void render(Gdiplus::Graphics& g, Fonts& fonts, double timeMs);
+
+    /**
+     * Кадр, разрезанный надвое: между этими двумя вызовами сцену рисует VTK.
+     * Первый готовит фон и пересчитывает проекции атомов, второй кладёт
+     * поверх всё, что VTK пока не рисует.
+     */
+    void renderBackground(Gdiplus::Graphics& g);
+    void renderOverlays(Gdiplus::Graphics& g, Fonts& fonts, double timeMs);
+
+    /** Камера для внешнего рендера. */
+    CameraParams camera() const;
+
+    /**
+     * Радиус шара, Å. Наружу нужен затем, чтобы VTK строила шары ровно того же
+     * размера: подписи и дуги углов рассчитаны на эти радиусы.
+     */
+    double atomRadius(const std::string& el) const;
 
     // --- мышь ---
     void beginDrag(double x, double y);
@@ -82,7 +116,6 @@ private:
         std::function<void(Gdiplus::Graphics&)> draw;
     };
 
-    double atomRadius(const std::string& el) const;
     double sceneRadius() const;
     double cameraDistance() const;
     double focal() const;

@@ -186,22 +186,47 @@ Rgb MoleculeRenderer::fog(const Rgb& color, double z) const {
 // Кадр целиком
 // ---------------------------------------------------------------------------
 
+CameraParams MoleculeRenderer::camera() const {
+    return CameraParams{rotation, cameraDistance(), focal(), sceneRadius(), viewport};
+}
+
 void MoleculeRenderer::render(Gdiplus::Graphics& g, Fonts& fonts, double timeMs) {
-    drawBackground(g);
+    renderBackground(g);
     if (analysis == nullptr) return;
 
     const double progress = entryStart == 0 ? 1.0 : clamp01((timeMs - entryStart) / ENTRY_DURATION);
 
-    projected.clear();
-    for (const chem::Atom& a : analysis->molecule.atoms) projected.push_back(project(a.pos));
-
     std::vector<Primitive> primitives;
     collectBonds(primitives, progress);
     collectAtoms(primitives, progress, timeMs);
-    if (opts.showLonePairs) collectLonePairs(primitives, progress);
-    if (opts.showOrbitals) collectOrbitals(primitives, progress);
 
     // алгоритм художника: сначала дальние
+    std::stable_sort(primitives.begin(), primitives.end(),
+                     [](const Primitive& a, const Primitive& b) { return a.depth > b.depth; });
+    for (const Primitive& p : primitives) p.draw(g);
+
+    renderOverlays(g, fonts, timeMs);
+}
+
+void MoleculeRenderer::renderBackground(Gdiplus::Graphics& g) {
+    drawBackground(g);
+    projected.clear();
+    if (analysis == nullptr) return;
+    // Проекции нужны и наложениям, и проверке попадания мыши, поэтому
+    // считаются до сцены, а не вместе с шарами.
+    for (const chem::Atom& a : analysis->molecule.atoms) projected.push_back(project(a.pos));
+}
+
+void MoleculeRenderer::renderOverlays(Gdiplus::Graphics& g, Fonts& fonts, double timeMs) {
+    if (analysis == nullptr) return;
+    const double progress = entryStart == 0 ? 1.0 : clamp01((timeMs - entryStart) / ENTRY_DURATION);
+
+    // Неподелённые пары и орбитали пока рисуются здесь, а значит ложатся
+    // ПОВЕРХ шаров, даже когда должны быть за ними. Сортировка по глубине
+    // вместе с атомами вернётся на этапе 4, когда они переедут в VTK.
+    std::vector<Primitive> primitives;
+    if (opts.showLonePairs) collectLonePairs(primitives, progress);
+    if (opts.showOrbitals) collectOrbitals(primitives, progress);
     std::stable_sort(primitives.begin(), primitives.end(),
                      [](const Primitive& a, const Primitive& b) { return a.depth > b.depth; });
     for (const Primitive& p : primitives) p.draw(g);

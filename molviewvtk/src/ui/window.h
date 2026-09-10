@@ -12,6 +12,7 @@
 #include "chem/analyze.h"
 #include "chem/database.h"
 #include "render/renderer.h"
+#include "scene/scene.h"
 #include "ui/panel.h"
 
 namespace ui {
@@ -66,6 +67,8 @@ private:
 
     render::Fonts fonts;
     render::MoleculeRenderer renderer;
+    // Шары и связи рисует VTK, всё остальное — по-прежнему GDI+.
+    scene::Scene scene;
     Panels panels;
     AppState state;
 

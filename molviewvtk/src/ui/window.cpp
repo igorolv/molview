@@ -305,7 +305,15 @@ void Window::onPaint() {
         g.FillRectangle(&background, 0, 0, backWidth, backHeight);
 
         const double time = now();
-        renderer.render(g, fonts, time);
+
+        // Кадр собирается в три слоя: фон и сетка от GDI+, сцена от VTK
+        // поверх них, а сверху — то, что VTK пока не рисует. Между слоями
+        // нужен Flush: GDI+ и обычный GDI пишут в один растр, и порядок
+        // операций должен быть тем, в каком они выписаны.
+        renderer.renderBackground(g);
+        g.Flush(Gdiplus::FlushIntentionSync);
+        scene.draw(backDc, renderer);
+        renderer.renderOverlays(g, fonts, time);
 
         state.analysis = hasAnalysis ? &analysis : nullptr;
         state.selectedAtom = renderer.selected();
@@ -492,6 +500,7 @@ void Window::applyAnalysis(chem::Analysis&& value) {
     state.errorHint.clear();
 
     renderer.setAnalysis(&analysis, now());
+    scene.setAnalysis(&analysis);
     panels.resetPanelScroll();
 }
 

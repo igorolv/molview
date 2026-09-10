@@ -36,19 +36,36 @@ file(GLOB CHEM_SRC CONFIGURE_DEPENDS src/chem/*.cpp)
 add_library(chem STATIC ${CHEM_SRC})
 target_include_directories(chem PUBLIC src)
 
+# ── VTK ─────────────────────────────────────────────────────────────────
+# Просить только нужные модули, а не всё сразу: полный список тянет на
+# компоновку сотню библиотек и превращает сборку в минуту ожидания.
+find_package(VTK REQUIRED COMPONENTS
+    CommonCore
+    CommonDataModel
+    DomainsChemistry
+    RenderingCore
+    RenderingOpenGL2
+    RenderingFreeType
+)
+
 # ── оконная программа ───────────────────────────────────────────────────
-file(GLOB GUI_SRC CONFIGURE_DEPENDS src/render/*.cpp src/ui/*.cpp)
+file(GLOB GUI_SRC CONFIGURE_DEPENDS src/render/*.cpp src/scene/*.cpp src/ui/*.cpp)
 add_executable(molview WIN32 ${GUI_SRC} src/main.cpp)
-target_link_libraries(molview PRIVATE chem gdiplus comctl32 gdi32 user32 ole32)
+# msimg32 — ради AlphaBlend, которым кадр VTK ложится на фон от GDI+.
+target_link_libraries(molview PRIVATE chem ${VTK_LIBRARIES}
+                      gdiplus comctl32 gdi32 msimg32 user32 ole32)
 
 # WIN32 выше даёт -mwindows (программа без консоли за спиной), а точка входа
 # у неё wWinMain с широкими строками — за это отвечает -municode.
 target_link_options(molview PRIVATE -municode)
 
-# Пока VTK не подключена, программа остаётся полностью статической, как
-# вторая версия. На этапе 3 эти флаги придётся убрать: VTK собрана
-# динамически, и статически с ней не слинковаться.
-target_link_options(molview PRIVATE -static -static-libgcc -static-libstdc++)
+# Единого статического .exe больше нет: VTK собрана динамически, и
+# статически с ней не слинковаться. Рядом с программой лягут DLL.
+
+# БЕЗ ЭТОЙ СТРОКИ БУДЕТ ЧЁРНЫЙ ЭКРАН. Она регистрирует фабрики реализаций
+# (какой рендер-бэкенд подставить вместо абстрактного vtkRenderWindow).
+# Ошибок при этом нет ни при сборке, ни при запуске — просто ничего не рисуется.
+vtk_module_autoinit(TARGETS molview MODULES ${VTK_LIBRARIES})
 
 # ── проверки ядра ───────────────────────────────────────────────────────
 # Консольные, про Windows не знают, поэтому WIN32 у них нет.
