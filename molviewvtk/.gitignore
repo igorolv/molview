@@ -19,3 +19,7 @@ probe/build/
 CMakeCache.txt
 CMakeFiles/
 cmake_install.cmake
+
+# Дистрибутив: собирается tools/distr.sh из build/ и data/, 140 МБ
+# перекопированных DLL. В репозитории ему делать нечего.
+distr/
