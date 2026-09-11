@@ -363,11 +363,13 @@ void Panels::drawLegend(Gdiplus::Graphics& g, Fonts& fonts, const AppState& stat
         rows.emplace_back(theme::ANGLE_ARC_RING, "угол задан циклом");
     }
     if (options.showLonePairs) rows.emplace_back(theme::LONE_PAIR, "неподелённая пара");
-    // Два знака волновой функции — две поверхности разного цвета, и без
-    // подписи фиолетовое с оранжевым читается как два разных предмета.
+    // Передние лепестки покрашены по назначению — связь или пара, — а
+    // обратные все одним цветом; без подписи три цвета читаются как три
+    // разных предмета.
     if (options.showOrbitals) {
-        rows.emplace_back(theme::ORBITAL, "орбиталь: ψ > 0");
-        rows.emplace_back(theme::ORBITAL_MINUS, "орбиталь: ψ < 0");
+        rows.emplace_back(theme::ORBITAL, "орбиталь связи");
+        rows.emplace_back(theme::LONE_PAIR, "орбиталь пары");
+        rows.emplace_back(theme::ORBITAL_MINUS, "обратный лепесток, ψ < 0");
     }
     if (options.showDipole) rows.emplace_back(theme::DIPOLE, "дипольный момент");
 
@@ -411,6 +413,8 @@ void Panels::drawToolbar(Gdiplus::Graphics& g, Fonts& fonts, const render::ViewO
 
         {"НЭП", Action::ToggleOption, static_cast<int>(Option::LonePairs), options.showLonePairs, false},
         {"Орбитали", Action::ToggleOption, static_cast<int>(Option::Orbitals), options.showOrbitals, false},
+        {"Как считается", Action::ToggleOption, static_cast<int>(Option::OrbitalView),
+         options.orbitalView == render::OrbitalView::Computed, false},
         {"Диполь", Action::ToggleOption, static_cast<int>(Option::Dipole), options.showDipole, false},
         {"Подписи", Action::ToggleOption, static_cast<int>(Option::Labels), options.showLabels, true},
 
@@ -994,6 +998,14 @@ void Panels::drawHelp(Gdiplus::Graphics& g, Fonts& fonts, double mouseX, double 
          "Перетаскивание мышью — поворот, колесо — масштаб, двойной щелчок — вернуть вид. "
          "Щелчок по атому открывает его разбор и оставляет только его валентные углы. "
          "Клавиша «/» переводит курсор в строку поиска, Esc закрывает это окно."},
+        {"Орбитали",
+         "Кнопка «Орбитали» показывает гибридные орбитали центрального атома: лепестки "
+         "связей и лепестки неподелённых пар покрашены по-разному, маленький обратный лепесток "
+         "— третьим цветом. Это посчитанные поверхности уровня волновой функции в приближении "
+         "Слейтера — так орбитали рисуют в учебниках. «Как считается» переключает на точные "
+         "функции атома водорода с радиальным узлом: положительная часть прячется в ядре, а "
+         "отрицательная торчит наружу конусами. Считать так правильно, а смотреть — не на что; "
+         "потому в учебниках и рисуют иначе."},
         {"Откуда берётся геометрия",
          "Координаты не хранятся в базе, а вычисляются: электронные группы расставляются "
          "по сфере минимизацией энергии их отталкивания, затем молекула наращивается обходом "

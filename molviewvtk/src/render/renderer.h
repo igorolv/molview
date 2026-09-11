@@ -25,9 +25,23 @@ namespace render {
 enum class AngleMode { None, Selected, All };
 enum class Style { BallStick, SpaceFill, Wire };
 
+/**
+ * Какую радиальную часть показывать у орбиталей.
+ *
+ * Textbook — приближение Слейтера: лепесток вперёд, хвостик назад, четыре
+ * sp³ читаются как тетраэдр. Это картинка из учебника, и она стоит по
+ * умолчанию: программа учебная, и понятность здесь важнее точности.
+ * Computed — водородоподобная 2s с радиальным узлом, как записано в задании.
+ * Посчитана верно, а смотреть на неё нельзя: положительная часть прячется
+ * в ядре, отрицательная торчит конусами (раздел 11 задания). Режим оставлен
+ * нарочно — чтобы показать, ПОЧЕМУ в учебниках рисуют не это.
+ */
+enum class OrbitalView { Textbook, Computed };
+
 struct ViewOptions {
     bool showLonePairs = true;
     bool showOrbitals = false;
+    OrbitalView orbitalView = OrbitalView::Textbook;
     bool showLabels = true;
     bool showDipole = false;
     AngleMode showAngles = AngleMode::Selected;
@@ -87,8 +101,10 @@ struct OrbitalSet {
     chem::Vec3 center;
     /** Тип гибрида — от него зависят коэффициенты при s и p. */
     chem::Orbital kind = chem::Orbital::Sp3;
-    /** Единичные направления гибридов (и связывающих, и занятых парами). */
+    /** Единичные направления гибридов: сначала связывающие, за ними — занятые парами. */
     std::vector<chem::Vec3> dirs;
+    /** Сколько первых направлений в dirs — связи; остальные — неподелённые пары. */
+    int bonding = 0;
     /** Размер сетки, заряд ядра, вид радиальной части. */
     chem::OrbitalOptions options;
 };

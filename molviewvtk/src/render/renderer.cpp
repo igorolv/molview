@@ -26,7 +26,7 @@ constexpr double ATOM_RADIUS_FACTOR = 0.34;
 constexpr int ORBITAL_GRID = 65;
 /**
  * Насколько орбиталь уходит от атома, в ковалентных радиусах. Передний
- * лепесток на выбранном уровне кончается примерно на 1,4 радиуса; берём 2
+ * лепесток на выбранном уровне кончается примерно на 1,05 радиуса; берём 2
  * с запасом, чтобы плоскости отсечения камеры не срезали его край.
  */
 constexpr double ORBITAL_REACH = 2.0;
@@ -574,8 +574,10 @@ std::vector<OrbitalSet> MoleculeRenderer::orbitals() const {
         set.center = analysis->molecule.atoms[info.id].pos;
         set.kind = chem::orbitalForSteric(info.steric);
         set.dirs = info.orbitalDirs;
+        set.bonding = info.sigma;
         set.options.size = ORBITAL_GRID;
-        set.options.radial = chem::Radial::Slater;
+        set.options.radial = opts.orbitalView == OrbitalView::Computed ? chem::Radial::Hydrogen
+                                                                         : chem::Radial::Slater;
         // Радиус наибольшей плотности p-части — 4/Z боровских радиусов;
         // приравниваем его ковалентному радиусу элемента. Тогда лепесток
         // дотягивается примерно до соседнего атома, как его и рисуют в

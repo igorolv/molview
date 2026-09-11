@@ -446,6 +446,14 @@ void Window::perform(const Hotspot& spot) {
             switch (static_cast<Option>(spot.value)) {
                 case Option::LonePairs: options.showLonePairs = !options.showLonePairs; break;
                 case Option::Orbitals:  options.showOrbitals = !options.showOrbitals; break;
+                // Режим «как считается» без орбиталей на экране показать нечего,
+                // поэтому его включение заодно включает и их.
+                case Option::OrbitalView:
+                    options.orbitalView = options.orbitalView == render::OrbitalView::Textbook
+                                              ? render::OrbitalView::Computed
+                                              : render::OrbitalView::Textbook;
+                    if (options.orbitalView == render::OrbitalView::Computed) options.showOrbitals = true;
+                    break;
                 case Option::Labels:    options.showLabels = !options.showLabels; break;
                 case Option::Dipole:    options.showDipole = !options.showDipole; break;
                 case Option::AutoRotate: options.autoRotate = !options.autoRotate; break;

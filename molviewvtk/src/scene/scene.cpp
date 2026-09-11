@@ -1,4 +1,4 @@
-#include "scene/scene.h"
+﻿#include "scene/scene.h"
 
 #include <vtkActor.h>
 #include <vtkCellArray.h>
@@ -48,12 +48,19 @@ constexpr double BOND_RADIUS = 0.115;  // как в собственном ре�
 //
 // Доли, а не абсолютные величины: у sp, sp² и sp³ разные коэффициенты при s,
 // а значит и разная амплитуда. Порознь — потому что обратный лепесток слабее
-// переднего вдвое у sp³ и вчетверо у sp: на общем уровне он либо не появится
-// вовсе, либо заставит опустить уровень так, что передние лепестки четырёх
-// sp³-орбиталей сольются в шар. Оба значения подобраны глазами на воде,
-// нитрат-ионе и углекислом газе.
-constexpr double ORBITAL_ISO_PLUS = 0.45;
-constexpr double ORBITAL_ISO_MINUS = 0.55;
+// переднего вдвое у sp³ и вчетверо у sp: на общем уровне выше половины его
+// нет вовсе, а ниже половины передние лепестки раздуваются в яйцо шире
+// собственной длины.
+//
+// Числа подобраны под ПОНЯТНОСТЬ, а не под плотность: программа учебная.
+// Передний лепесток при 0,7 — капля длиной 1,05 ковалентного радиуса и
+// полушириной 0,55, кончик касается шара соседа. Обратный при 0,8 — хвостик
+// длиной 1,0 радиуса, из шара атома (0,5 радиуса) выглядывает наполовину.
+// При прежних 0,45 и 0,55 хвостик был почти с передний лепесток (1,26 против
+// 1,42), сам передний — яйцо шире своей длины, и четыре sp³ сливались вокруг
+// атома в сплошную кляксу.
+constexpr double ORBITAL_ISO_PLUS = 0.70;
+constexpr double ORBITAL_ISO_MINUS = 0.80;
 // Обратный лепесток и полупрозрачным читается хорошо, а передний на нём же
 // теряется — он крупнее и его больше перекрывают соседние.
 constexpr double ORBITAL_OPACITY_PLUS = 0.55;
@@ -88,25 +95,35 @@ struct Scene::Impl {
     /**
      * Изоповерхности гибридных орбиталей ОДНОГО атома.
      *
-     * Знаки разведены по двум актёрам: у них разный цвет и разная
-     * прозрачность, одним проходом vtkFlyingEdges3D такого не выйдет. А вот
-     * гибриды одного знака сшиваются в одного актёра через
-     * vtkAppendPolyData — и дело не в опрятности. Прозрачность рисуется
-     * послойно, и каждый слой заново обходит ВСЕХ прозрачных актёров:
-     * четыре орбитали воды — это восемь актёров против двух, то есть вчетверо
-     * больше вызовов отрисовки на тот же кадр.
+     * Три актёра на атом: передние лепестки связывающих орбиталей, передние
+     * лепестки орбиталей с неподелёнными парами и обратные лепестки всех
+     * разом. Цвет переднего лепестка — по назначению, а не по знаку ψ: для
+     * школьника главное в картинке воды — «эти две смотрят на водороды, а
+     * эти две заняты парами, потому и угол 104,5°, а не 109,5°». Знак при
+     * этом не теряется: обратный лепесток всегда отдельного цвета.
+     *
+     * Гибриды одного цвета сшиваются в одного актёра через vtkAppendPolyData —
+     * и дело не в опрятности. Прозрачность рисуется послойно, и каждый слой
+     * заново обходит ВСЕХ прозрачных актёров: четыре орбитали воды — это
+     * восемь актёров против трёх, то есть вдвое-втрое больше вызовов
+     * отрисовки на тот же кадр.
      */
+    struct SurfacePart {
+        vtkNew<vtkAppendPolyData> mesh;
+        vtkNew<vtkPolyDataMapper> mapper;
+        vtkNew<vtkActor> actor;
+    };
     struct OrbitalSurface {
         // Поля и контуры живут ровно затем, чтобы конвейер до них дотянулся;
         // vtkNew в вектор не кладётся, поэтому умные указатели.
         std::vector<vtkSmartPointer<vtkImageData>> fields;
         std::vector<vtkSmartPointer<vtkFlyingEdges3D>> contours;
-        vtkNew<vtkAppendPolyData> positive;
-        vtkNew<vtkAppendPolyData> negative;
-        vtkNew<vtkPolyDataMapper> positiveMapper;
-        vtkNew<vtkPolyDataMapper> negativeMapper;
-        vtkNew<vtkActor> positiveActor;
-        vtkNew<vtkActor> negativeActor;
+        SurfacePart bond;
+        SurfacePart pair;
+        SurfacePart back;
+        /** Сколько орбиталей попало в каждую сшивку — пустой актёр VTK не любит. */
+        int bonds = 0;
+        int pairs = 0;
     };
     // unique_ptr, а не сами объекты: vtkNew внутри не копируется и не
     // перемещается, поэтому в vector структура целиком не влезает.
@@ -340,8 +357,9 @@ struct Scene::Impl {
         builtOrbitals = sets;
 
         for (const std::unique_ptr<OrbitalSurface>& old : orbitals) {
-            frame.renderer()->RemoveActor(old->positiveActor);
-            frame.renderer()->RemoveActor(old->negativeActor);
+            frame.renderer()->RemoveActor(old->bond.actor);
+            frame.renderer()->RemoveActor(old->pair.actor);
+            frame.renderer()->RemoveActor(old->back.actor);
         }
         orbitals.clear();
 
@@ -350,7 +368,8 @@ struct Scene::Impl {
                 chem::orbitalGrids(set.kind, set.dirs, set.center, set.options);
             auto surface = std::make_unique<OrbitalSurface>();
 
-            for (const chem::OrbitalGrid& grid : grids) {
+            for (std::size_t k = 0; k < grids.size(); k++) {
+                const chem::OrbitalGrid& grid = grids[k];
                 const double plus = ORBITAL_ISO_PLUS * grid.highest();
                 const double minus = ORBITAL_ISO_MINUS * grid.lowest();
                 if (!(plus > 0)) continue;
@@ -370,15 +389,20 @@ struct Scene::Impl {
                 field->GetPointData()->SetScalars(scalars);
                 surface->fields.push_back(field);
 
-                addContour(*surface, field, plus, *surface->positive);
-                addContour(*surface, field, minus, *surface->negative);
+                const bool isBond = static_cast<int>(k) < set.bonding;
+                addContour(*surface, field, plus, *(isBond ? surface->bond : surface->pair).mesh);
+                addContour(*surface, field, minus, *surface->back.mesh);
+                (isBond ? surface->bonds : surface->pairs)++;
             }
             if (surface->fields.empty()) continue;
 
-            setupSurface(*surface->positive, *surface->positiveMapper, *surface->positiveActor,
-                         render::theme::ORBITAL, ORBITAL_OPACITY_PLUS);
-            setupSurface(*surface->negative, *surface->negativeMapper, *surface->negativeActor,
-                         render::theme::ORBITAL_MINUS, ORBITAL_OPACITY_MINUS);
+            if (surface->bonds > 0) {
+                setupSurface(surface->bond, render::theme::ORBITAL, ORBITAL_OPACITY_PLUS);
+            }
+            if (surface->pairs > 0) {
+                setupSurface(surface->pair, render::theme::LONE_PAIR, ORBITAL_OPACITY_PLUS);
+            }
+            setupSurface(surface->back, render::theme::ORBITAL_MINUS, ORBITAL_OPACITY_MINUS);
             orbitals.push_back(std::move(surface));
         }
     }
@@ -399,12 +423,12 @@ struct Scene::Impl {
         surface.contours.push_back(edges);
     }
 
-    /** Актёр одного знака: цвет, прозрачность, свет. */
-    void setupSurface(vtkAppendPolyData& source, vtkPolyDataMapper& mapper, vtkActor& actor,
-                      const render::Rgb& color, double opacity) {
-        mapper.SetInputConnection(source.GetOutputPort());
-        mapper.ScalarVisibilityOff();
-        actor.SetMapper(&mapper);
+    /** Актёр одной сшивки: цвет, прозрачность, свет. */
+    void setupSurface(SurfacePart& part, const render::Rgb& color, double opacity) {
+        vtkActor& actor = *part.actor;
+        part.mapper->SetInputConnection(part.mesh->GetOutputPort());
+        part.mapper->ScalarVisibilityOff();
+        actor.SetMapper(part.mapper);
         actor.GetProperty()->SetColor(color.r / 255.0, color.g / 255.0, color.b / 255.0);
         actor.GetProperty()->SetOpacity(opacity);
         // Изнутри лепестка видна его обратная сторона, и без освещения
@@ -422,6 +446,8 @@ struct Scene::Impl {
         if (a.size() != b.size()) return false;
         for (std::size_t i = 0; i < a.size(); i++) {
             if (a[i].kind != b[i].kind || a[i].dirs.size() != b[i].dirs.size()) return false;
+            if (a[i].bonding != b[i].bonding) return false;
+            if (a[i].options.radial != b[i].options.radial) return false;
             if (std::abs(a[i].options.zeff - b[i].options.zeff) > 1e-9) return false;
             if (std::abs(a[i].options.half - b[i].options.half) > 1e-9) return false;
             if (chem::dist(a[i].center, b[i].center) > 1e-9) return false;

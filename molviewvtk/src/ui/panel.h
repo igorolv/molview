@@ -38,7 +38,7 @@ enum class Action {
     Suggestion,        // value — номер подсказки
 };
 
-enum class Option { LonePairs, Orbitals, Labels, Dipole, AutoRotate };
+enum class Option { LonePairs, Orbitals, OrbitalView, Labels, Dipole, AutoRotate };
 
 struct Hotspot {
     RectD rect;
