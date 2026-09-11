@@ -16,6 +16,7 @@
 #include "chem/types.h"
 #include "chem/vec.h"
 #include "render/draw.h"
+#include "render/occlusion.h"
 #include "render/palette.h"
 
 namespace render {
@@ -50,6 +51,36 @@ struct CameraParams {
     RectD viewport;
 };
 
+/**
+ * Дуга валентного угла. Геометрию считает вид, рисует её сцена на VTK — там
+ * дуга правильно уходит за шар центрального атома, чего при рисовании поверх
+ * кадра быть не может. Подпись остаётся за GDI+, поэтому расчёт общий.
+ */
+struct AngleArc {
+    const chem::AngleRecord* record = nullptr;
+    chem::Vec3 center;
+    /** Единичные направления на соседей. */
+    chem::Vec3 from, to;
+    /** Точки дуги в мировых координатах — по ним сцена строит трубку. */
+    std::vector<chem::Vec3> points;
+    double radius = 0;
+    /** 180°: дуги не существует, вместо неё отрезок-диаметр. */
+    bool linear = false;
+    /** Угол при выбранном или подсвеченном атоме — рисуется ярче. */
+    bool emphasised = false;
+    Rgb color;
+    double alpha = 1;
+};
+
+/** Облако неподелённой пары. */
+struct LonePairCloud {
+    chem::Vec3 position;
+    /** Направление от атома — вдоль него разносятся два электрона. */
+    chem::Vec3 direction;
+    double radius = 0;
+    double alpha = 1;
+};
+
 class MoleculeRenderer {
 public:
     /** Разбор принадлежит приложению; рендер только читает его. */
@@ -71,11 +102,14 @@ public:
      * Первый готовит фон и пересчитывает проекции атомов, второй кладёт
      * поверх всё, что VTK пока не рисует.
      */
-    void renderBackground(Gdiplus::Graphics& g);
+    void renderBackground(Gdiplus::Graphics& g, double timeMs);
     void renderOverlays(Gdiplus::Graphics& g, Fonts& fonts, double timeMs);
 
     /** Камера для внешнего рендера. */
     CameraParams camera() const;
+
+    /** Дуги углов для сцены. Считаются по режиму показа и текущему выбору. */
+    std::vector<AngleArc> angleArcs() const;
 
     /**
      * Радиус шара, Å. Наружу нужен затем, чтобы VTK строила шары ровно того же
@@ -137,14 +171,23 @@ private:
 
     bool labelCollides(const RectD& r) const;
 
+    /** Пересчитать положение глаза, оси камеры и заслоняющие шары. */
+    void updateOcclusion();
+
     const chem::Analysis* analysis = nullptr;
     ViewOptions opts;
+
+    // Видимость подписей. Пересчитывается раз в кадр вместе с проекциями.
+    Occluder occluder;
+    chem::Vec3 eyePos, camRight, camUp;
 
     chem::Mat3 rotation = chem::IDENTITY;
     double zoom = 1;
     RectD viewport{0, 0, 800, 600};
 
     double entryStart = 0;
+    /** Ход анимации появления в текущем кадре. Ставится в renderBackground. */
+    double frameProgress = 1;
     std::vector<Projected> projected;
     /** Прямоугольники уже нарисованных подписей — чтобы они не налезали друг на друга. */
     std::vector<RectD> labelRects;

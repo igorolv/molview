@@ -191,7 +191,7 @@ CameraParams MoleculeRenderer::camera() const {
 }
 
 void MoleculeRenderer::render(Gdiplus::Graphics& g, Fonts& fonts, double timeMs) {
-    renderBackground(g);
+    renderBackground(g, timeMs);
     if (analysis == nullptr) return;
 
     const double progress = entryStart == 0 ? 1.0 : clamp01((timeMs - entryStart) / ENTRY_DURATION);
@@ -208,13 +208,30 @@ void MoleculeRenderer::render(Gdiplus::Graphics& g, Fonts& fonts, double timeMs)
     renderOverlays(g, fonts, timeMs);
 }
 
-void MoleculeRenderer::renderBackground(Gdiplus::Graphics& g) {
+void MoleculeRenderer::renderBackground(Gdiplus::Graphics& g, double timeMs) {
+    frameProgress = entryStart == 0 ? 1.0 : clamp01((timeMs - entryStart) / ENTRY_DURATION);
     drawBackground(g);
     projected.clear();
+    updateOcclusion();
     if (analysis == nullptr) return;
     // Проекции нужны и наложениям, и проверке попадания мыши, поэтому
     // считаются до сцены, а не вместе с шарами.
     for (const chem::Atom& a : analysis->molecule.atoms) projected.push_back(project(a.pos));
+}
+
+void MoleculeRenderer::updateOcclusion() {
+    // Обращение поворота переводит оси камеры в мировые координаты. Глаз стоит
+    // в системе камеры в точке (0, 0, −d) — см. комментарий к project().
+    const Mat3 inverse = chem::transpose(rotation);
+    eyePos = chem::applyMat(inverse, v3(0, 0, -cameraDistance()));
+    camRight = chem::applyMat(inverse, v3(1, 0, 0));
+    camUp = chem::applyMat(inverse, v3(0, 1, 0));
+
+    occluder.clear();
+    if (analysis == nullptr) return;
+    for (const chem::Atom& atom : analysis->molecule.atoms) {
+        occluder.add(atom.pos, atomRadius(atom.el));
+    }
 }
 
 void MoleculeRenderer::renderOverlays(Gdiplus::Graphics& g, Fonts& fonts, double timeMs) {
@@ -453,8 +470,14 @@ void MoleculeRenderer::collectLonePairs(std::vector<Primitive>& out, double prog
         const double reach = atomRadius(atom.el) + 0.42;
 
         for (const Vec3& dir : info.lonePairDirs) {
-            const Projected p = project(add(atom.pos, mul(dir, reach)));
+            const Vec3 cloud = add(atom.pos, mul(dir, reach));
+            const Projected p = project(cloud);
             if (!p.visible) continue;
+            // Облако — мягкое пятно диаметром в треть ангстрема, то есть почти
+            // точка: одной проверки хватает. Закрытое наполовину исчезает
+            // целиком, а не срезается по краю шара, но при таких размерах это
+            // заметно только если специально искать.
+            if (!occluder.visible(eyePos, cloud)) continue;
 
             const Projected base = project(atom.pos);
             const double axisX = p.x - base.x;
@@ -594,11 +617,12 @@ bool MoleculeRenderer::labelCollides(const RectD& r) const {
     return false;
 }
 
-void MoleculeRenderer::drawAngles(Gdiplus::Graphics& g, Fonts& fonts, double progress) {
-    if (progress < 0.6) return;
-    const double fade = std::min(1.0, (progress - 0.6) / 0.3);
+std::vector<AngleArc> MoleculeRenderer::angleArcs() const {
+    std::vector<AngleArc> arcs;
+    if (analysis == nullptr || opts.showAngles == AngleMode::None) return arcs;
+    if (frameProgress < 0.6) return arcs;
+    const double fade = std::min(1.0, (frameProgress - 0.6) / 0.3);
     const int focus = selectedAtom != -1 ? selectedAtom : hoveredAtom;
-    labelRects.clear();
 
     const chem::Molecule& mol = analysis->molecule;
     std::vector<const chem::AngleRecord*> records;
@@ -623,7 +647,7 @@ void MoleculeRenderer::drawAngles(Gdiplus::Graphics& g, Fonts& fonts, double pro
                 if (!a.isCentral || a.el == "H") continue;
                 if (best == nullptr || a.sigma > best->sigma) best = &a;
             }
-            if (best == nullptr) return;
+            if (best == nullptr) return arcs;
             center = best->id;
         }
         std::vector<const chem::AngleRecord*> filtered;
@@ -632,58 +656,56 @@ void MoleculeRenderer::drawAngles(Gdiplus::Graphics& g, Fonts& fonts, double pro
         }
         records = filtered;
     }
-    if (records.empty()) return;
-
-    const render::Font* font = fonts.mono(12.5, true);
+    if (records.empty()) return arcs;
 
     for (const chem::AngleRecord* record : records) {
         const Vec3 c = mol.atoms[record->center].pos;
-        const Vec3 u = norm(sub(mol.atoms[record->i].pos, c));
-        const Vec3 w = norm(sub(mol.atoms[record->j].pos, c));
-        const double radius = 0.46 * std::min(len(sub(mol.atoms[record->i].pos, c)),
-                                              len(sub(mol.atoms[record->j].pos, c)));
+        AngleArc arc;
+        arc.record = record;
+        arc.center = c;
+        arc.from = norm(sub(mol.atoms[record->i].pos, c));
+        arc.to = norm(sub(mol.atoms[record->j].pos, c));
+        arc.radius = 0.46 * std::min(len(sub(mol.atoms[record->i].pos, c)),
+                                     len(sub(mol.atoms[record->j].pos, c)));
+        // Для линейного фрагмента дуги не существует: вместо неё отрезок.
+        arc.linear = record->actual > 172;
+        arc.emphasised = focus == record->center;
+        arc.color = record->inRing ? theme::ANGLE_ARC : theme::ANGLE_ARC;
+        if (record->inRing) arc.color = theme::ANGLE_ARC_RING;
+        arc.alpha = fade * (arc.emphasised ? 1.0 : 0.72);
+        if (!arc.linear) {
+            const int steps = 36;
+            arc.points.reserve(steps + 1);
+            for (int k = 0; k <= steps; k++) {
+                arc.points.push_back(
+                    add(c, mul(slerp(arc.from, arc.to, static_cast<double>(k) / steps), arc.radius)));
+            }
+        }
+        arcs.push_back(arc);
+    }
+    return arcs;
+}
 
-        // Для линейного фрагмента дуги не существует: рисуем прямую-диаметр.
-        if (record->actual > 172) {
-            drawLinearAngle(g, fonts, *record, c, u, w, radius, fade);
+void MoleculeRenderer::drawAngles(Gdiplus::Graphics& g, Fonts& fonts, double progress) {
+    (void)progress;
+    labelRects.clear();
+    const std::vector<AngleArc> arcs = angleArcs();
+    if (arcs.empty()) return;
+
+    const render::Font* font = fonts.mono(12.5, true);
+
+    for (const AngleArc& arc : arcs) {
+        const chem::AngleRecord* record = arc.record;
+        const Vec3 c = arc.center;
+        const Vec3 u = arc.from;
+        const Vec3 w = arc.to;
+        const double radius = arc.radius;
+        const double alpha = arc.alpha;
+        const Rgb color = arc.color;
+        if (arc.linear) {
+            drawLinearAngle(g, fonts, *record, c, u, w, radius, alpha);
             continue;
         }
-
-        const int steps = 36;
-        std::vector<Projected> points;
-        bool allVisible = true;
-        for (int s = 0; s <= steps; s++) {
-            const Projected p = project(add(c, mul(slerp(u, w, static_cast<double>(s) / steps), radius)));
-            if (!p.visible) { allVisible = false; break; }
-            points.push_back(p);
-        }
-        if (!allVisible) continue;
-
-        const Rgb color = record->inRing ? theme::ANGLE_ARC_RING : theme::ANGLE_ARC;
-        const bool emphasised = focus == record->center;
-        const double alpha = fade * (emphasised ? 1.0 : 0.72);
-
-        // заливка сектора
-        const Projected centerPoint = project(c);
-        std::vector<Gdiplus::PointF> sector;
-        sector.push_back(Gdiplus::PointF(static_cast<Gdiplus::REAL>(centerPoint.x),
-                                         static_cast<Gdiplus::REAL>(centerPoint.y)));
-        for (const Projected& p : points) {
-            sector.push_back(Gdiplus::PointF(static_cast<Gdiplus::REAL>(p.x),
-                                             static_cast<Gdiplus::REAL>(p.y)));
-        }
-        Gdiplus::SolidBrush fill(toColor(color, 0.10 * alpha));
-        g.FillPolygon(&fill, sector.data(), static_cast<INT>(sector.size()));
-
-        // дуга со свечением
-        Gdiplus::GraphicsPath arc;
-        for (std::size_t k = 1; k < points.size(); k++) {
-            arc.AddLine(static_cast<Gdiplus::REAL>(points[k - 1].x), static_cast<Gdiplus::REAL>(points[k - 1].y),
-                        static_cast<Gdiplus::REAL>(points[k].x), static_cast<Gdiplus::REAL>(points[k].y));
-        }
-        glowPath(g, arc, color, emphasised ? 2.0 : 1.4, alpha);
-        Gdiplus::Pen pen(toColor(color, alpha), static_cast<Gdiplus::REAL>(emphasised ? 2.0 : 1.4));
-        g.DrawPath(&pen, &arc);
 
         // подпись: отодвигаем её вдоль биссектрисы, пока она не перестанет
         // накладываться на уже нарисованные
@@ -695,8 +717,12 @@ void MoleculeRenderer::drawAngles(Gdiplus::Graphics& g, Fonts& fonts, double pro
         bool placed = false;
         Projected spot{};
         for (int attempt = 0; attempt < 5; attempt++) {
-            const Projected point = project(add(c, mul(outward, radius * (1.34 + attempt * 0.55))));
+            const Vec3 anchor = add(c, mul(outward, radius * (1.34 + attempt * 0.55)));
+            const Projected point = project(anchor);
             if (!point.visible) break;
+            // Подпись, заехавшую за шар, не показываем: она стоит в стороне от
+            // атомов, поэтому хватает проверки одной точки.
+            if (!occluder.visible(eyePos, anchor)) continue;
             const RectD rect{point.x - boxW / 2, point.y - boxH / 2, boxW, boxH};
             if (!labelCollides(rect)) { spot = point; labelRects.push_back(rect); placed = true; break; }
         }
@@ -755,6 +781,11 @@ void MoleculeRenderer::drawLinearAngle(Gdiplus::Graphics& g, Fonts& fonts,
 // ---------------------------------------------------------------------------
 
 void MoleculeRenderer::drawDipole(Gdiplus::Graphics& g, Fonts& fonts, double progress) const {
+    // Стрелка НАМЕРЕННО рисуется поверх всего и не проверяется на видимость.
+    // Это не предмет сцены, а обозначение: она заведомо длиннее молекулы и
+    // проходит сквозь неё насквозь. Ниже под неё кладётся тёмная подложка —
+    // ровно затем, чтобы стрелка читалась и на светлых атомах. Отдать её
+    // на откуп глубине значило бы спрятать половину.
     if (analysis->dipoleValue < 0.06) return;
     const double fade = clamp01((progress - 0.65) / 0.3);
     if (fade <= 0) return;
@@ -852,6 +883,17 @@ void MoleculeRenderer::drawLabels(Gdiplus::Graphics& g, Fonts& fonts, double pro
         const double fontSize = std::max(9.0, std::min(22.0, r * 0.95));
         if (fontSize < 9.5) continue;
 
+        // Ангстремов на пиксель на этой глубине — переводим размер плашки
+        // из экранных единиц в мировые, чтобы проверить её видимость.
+        const double perPixel = p.z / focal();
+        const std::wstring symbol = toWide(atom.el);
+        const double halfW = measure(g, symbol, *fonts.ui(fontSize, true)).Width * 0.5 * perPixel;
+        const double halfH = fontSize * 0.5 * perPixel;
+        if (!occluder.rectVisible(eyePos, atom.pos, halfW, halfH, camRight, camUp,
+                                  static_cast<int>(index))) {
+            continue;
+        }
+
         const double alpha = (appear - 0.6) / 0.4;
         const Rgb elementColor = hexToRgb(chem::element(atom.el).color);
         const Gdiplus::Color textColor = luminance(elementColor) > 0.55
@@ -859,7 +901,7 @@ void MoleculeRenderer::drawLabels(Gdiplus::Graphics& g, Fonts& fonts, double pro
             : Gdiplus::Color(static_cast<BYTE>(0.95 * alpha * 255), 255, 255, 255);
 
         const Rgb sphere = fog(elementColor, p.z);
-        drawTextCentered(g, toWide(atom.el), *fonts.ui(fontSize, true), textColor, p.x, p.y, sphere);
+        drawTextCentered(g, symbol, *fonts.ui(fontSize, true), textColor, p.x, p.y, sphere);
 
         const chem::AtomAnalysis& info = analysis->atoms[index];
         if (std::fabs(info.charge) > 0.01) {

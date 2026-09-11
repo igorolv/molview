@@ -310,7 +310,7 @@ void Window::onPaint() {
         // поверх них, а сверху — то, что VTK пока не рисует. Между слоями
         // нужен Flush: GDI+ и обычный GDI пишут в один растр, и порядок
         // операций должен быть тем, в каком они выписаны.
-        renderer.renderBackground(g);
+        renderer.renderBackground(g, time);
         g.Flush(Gdiplus::FlushIntentionSync);
         scene.draw(backDc, renderer);
         renderer.renderOverlays(g, fonts, time);

@@ -1,7 +1,9 @@
 #include "scene/scene.h"
 
 #include <vtkActor.h>
+#include <vtkCellArray.h>
 #include <vtkDataSetAttributes.h>
+#include <vtkPointData.h>
 #include <vtkCamera.h>
 #include <vtkBlueObeliskData.h>
 #include <vtkFloatArray.h>
@@ -9,8 +11,13 @@
 #include <vtkMolecule.h>
 #include <vtkMoleculeMapper.h>
 #include <vtkNew.h>
+#include <vtkPoints.h>
+#include <vtkPolyData.h>
+#include <vtkPolyDataMapper.h>
 #include <vtkPeriodicTable.h>
 #include <vtkProperty.h>
+#include <vtkTubeFilter.h>
+#include <vtkUnsignedCharArray.h>
 
 #include <shlobj.h>
 
@@ -45,6 +52,17 @@ struct Scene::Impl {
     vtkNew<vtkActor> actor;
     vtkNew<vtkLightKit> lights;
 
+    // Дуги валентных углов. Собираются заново каждый кадр: их состав зависит
+    // от того, какой атом выбран и над каким висит мышь.
+    vtkNew<vtkPolyData> arcLines;
+    vtkNew<vtkTubeFilter> arcTubes;
+    vtkNew<vtkPolyDataMapper> arcMapper;
+    vtkNew<vtkActor> arcActor;
+    /** Заливка сектора между сторонами угла. */
+    vtkNew<vtkPolyData> wedgeMesh;
+    vtkNew<vtkPolyDataMapper> wedgeMapper;
+    vtkNew<vtkActor> wedgeActor;
+
     const chem::Analysis* analysis = nullptr;
     /** Стиль, под который построены радиусы. -1 — ещё ни под какой. */
     int builtStyle = -1;
@@ -66,6 +84,27 @@ struct Scene::Impl {
         actor->SetMapper(mapper);
         frame.renderer()->AddActor(actor);
         lights->AddLightsToRenderer(frame.renderer());
+
+        // Дуга — светящаяся линия, а не поверхность: свет ей ни к чему,
+        // поэтому весь цвет идёт через ambient.
+        arcTubes->SetInputData(arcLines);
+        arcTubes->SetNumberOfSides(8);
+        arcTubes->CappingOn();
+        arcMapper->SetInputConnection(arcTubes->GetOutputPort());
+        arcMapper->SetColorModeToDirectScalars();
+        arcActor->SetMapper(arcMapper);
+        arcActor->GetProperty()->SetAmbient(1.0);
+        arcActor->GetProperty()->SetDiffuse(0.0);
+        arcActor->GetProperty()->SetSpecular(0.0);
+        frame.renderer()->AddActor(arcActor);
+
+        wedgeMapper->SetInputData(wedgeMesh);
+        wedgeMapper->SetColorModeToDirectScalars();
+        wedgeActor->SetMapper(wedgeMapper);
+        wedgeActor->GetProperty()->SetAmbient(1.0);
+        wedgeActor->GetProperty()->SetDiffuse(0.0);
+        wedgeActor->GetProperty()->SetSpecular(0.0);
+        frame.renderer()->AddActor(wedgeActor);
     }
 
     /** Перенос графа молекулы в vtkMolecule. */
@@ -158,6 +197,80 @@ struct Scene::Impl {
     }
 
     /**
+     * Дуги углов и заливка секторов.
+     *
+     * Толщина трубки задаётся в ангстремах и растёт вместе с радиусом дуги:
+     * в пикселях это даёт примерно ту же линию, что рисовал GDI+, на любой
+     * молекуле и любом масштабе.
+     */
+    void buildArcs(const render::MoleculeRenderer& view) {
+        const std::vector<render::AngleArc> arcs = view.angleArcs();
+
+        vtkNew<vtkPoints> arcPoints;
+        vtkNew<vtkCellArray> arcCells;
+        vtkNew<vtkUnsignedCharArray> arcColors;
+        arcColors->SetNumberOfComponents(4);
+        arcColors->SetName("colors");
+
+        vtkNew<vtkPoints> wedgePoints;
+        vtkNew<vtkCellArray> wedgeCells;
+        vtkNew<vtkUnsignedCharArray> wedgeColors;
+        wedgeColors->SetNumberOfComponents(4);
+        wedgeColors->SetName("colors");
+
+        double widest = 0.02;
+        for (const render::AngleArc& arc : arcs) {
+            if (arc.linear || arc.points.size() < 2) continue;
+            widest = std::max(widest, arc.radius * (arc.emphasised ? 0.055 : 0.038));
+
+            const unsigned char r = static_cast<unsigned char>(arc.color.r);
+            const unsigned char g = static_cast<unsigned char>(arc.color.g);
+            const unsigned char b = static_cast<unsigned char>(arc.color.b);
+            const unsigned char a = static_cast<unsigned char>(
+                std::max(0.0, std::min(1.0, arc.alpha)) * 255);
+
+            const vtkIdType first = arcPoints->GetNumberOfPoints();
+            arcCells->InsertNextCell(static_cast<vtkIdType>(arc.points.size()));
+            for (const chem::Vec3& p : arc.points) {
+                arcCells->InsertCellPoint(arcPoints->InsertNextPoint(p.x, p.y, p.z));
+                arcColors->InsertNextTuple4(r, g, b, a);
+            }
+            (void)first;
+
+            // сектор: веер треугольников из вершины угла
+            const vtkIdType apex = wedgePoints->InsertNextPoint(arc.center.x, arc.center.y,
+                                                                arc.center.z);
+            const unsigned char wedgeAlpha = static_cast<unsigned char>(
+                std::max(0.0, std::min(1.0, arc.alpha)) * 0.10 * 255);
+            wedgeColors->InsertNextTuple4(r, g, b, wedgeAlpha);
+            std::vector<vtkIdType> rim;
+            for (const chem::Vec3& p : arc.points) {
+                rim.push_back(wedgePoints->InsertNextPoint(p.x, p.y, p.z));
+                wedgeColors->InsertNextTuple4(r, g, b, wedgeAlpha);
+            }
+            for (std::size_t k = 1; k < rim.size(); k++) {
+                wedgeCells->InsertNextCell(3);
+                wedgeCells->InsertCellPoint(apex);
+                wedgeCells->InsertCellPoint(rim[k - 1]);
+                wedgeCells->InsertCellPoint(rim[k]);
+            }
+        }
+
+        arcLines->SetPoints(arcPoints);
+        arcLines->SetLines(arcCells);
+        arcLines->GetPointData()->SetScalars(arcColors);
+        arcTubes->SetRadius(widest);
+        arcLines->Modified();
+        arcActor->SetVisibility(arcPoints->GetNumberOfPoints() > 0);
+
+        wedgeMesh->SetPoints(wedgePoints);
+        wedgeMesh->SetPolys(wedgeCells);
+        wedgeMesh->GetPointData()->SetScalars(wedgeColors);
+        wedgeMesh->Modified();
+        wedgeActor->SetVisibility(wedgePoints->GetNumberOfPoints() > 0);
+    }
+
+    /**
      * Камера VTK по параметрам собственного рендера.
      *
      * Собственная проекция устроена так: c = R·p — точка в системе камеры,
@@ -208,6 +321,7 @@ void Scene::draw(HDC target, const render::MoleculeRenderer& view) {
 
     LARGE_INTEGER t0, t1, t2;
     QueryPerformanceCounter(&t0);
+    impl->buildArcs(view);
     impl->frame.resize(width, height);
     impl->applyCamera(cam);
     impl->frame.render();
