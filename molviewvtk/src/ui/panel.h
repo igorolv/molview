@@ -31,6 +31,7 @@ enum class Action {
     ToggleOption,      // value — Option
     SetAngleMode,      // value — render::AngleMode
     ResetView,
+    SaveImage,         // снимок сцены в PNG
     ShowHelp,
     CloseHelp,
     Random,

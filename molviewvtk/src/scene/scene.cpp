@@ -3,12 +3,16 @@
 #include <vtkActor.h>
 #include <vtkDataSetAttributes.h>
 #include <vtkCamera.h>
+#include <vtkBlueObeliskData.h>
 #include <vtkFloatArray.h>
 #include <vtkLightKit.h>
 #include <vtkMolecule.h>
 #include <vtkMoleculeMapper.h>
 #include <vtkNew.h>
+#include <vtkPeriodicTable.h>
 #include <vtkProperty.h>
+
+#include <shlobj.h>
 
 #include <algorithm>
 #include <cmath>
@@ -16,6 +20,8 @@
 
 #include "chem/periodic.h"
 #include "chem/vec.h"
+#include "render/palette.h"
+#include "render/draw.h"
 #include "scene/frame.h"
 
 namespace scene {
@@ -68,6 +74,8 @@ struct Scene::Impl {
         builtStyle = -1;  // радиусы тоже придётся переложить
         if (analysis == nullptr) return;
 
+        applyPalette();
+
         std::vector<vtkIdType> ids;
         ids.reserve(analysis->molecule.atoms.size());
         for (const chem::Atom& atom : analysis->molecule.atoms) {
@@ -89,6 +97,28 @@ struct Scene::Impl {
             molecule->AppendBond(ids[bond.a], ids[bond.b], static_cast<unsigned short>(order));
         }
         builtMolecule = true;
+    }
+
+    /**
+     * Своя палитра вместо стандартной CPK.
+     *
+     * Подменить таблицу цветов у маппера нельзя — она внутренняя. Но
+     * vtkPeriodicTable отдаёт наружу сам справочник vtkBlueObeliskData, а в
+     * нём массив DefaultColors изменяемый. Пишем туда цвета из elements.json:
+     * они те же CPK, но подогнанные под тёмный фон, и ими же панель разбора
+     * красит значок элемента — расхождение было бы заметно.
+     */
+    void applyPalette() {
+        if (analysis == nullptr) return;
+        vtkFloatArray* colors = mapper->GetPeriodicTable()->GetBlueObeliskData()->GetDefaultColors();
+        if (colors == nullptr) return;
+        for (const chem::Atom& atom : analysis->molecule.atoms) {
+            const int z = chem::element(atom.el).z;
+            if (z <= 0 || z >= colors->GetNumberOfTuples()) continue;
+            const render::Rgb c = render::hexToRgb(chem::element(atom.el).color);
+            colors->SetTuple3(z, c.r / 255.0, c.g / 255.0, c.b / 255.0);
+        }
+        colors->Modified();
     }
 
     /** Радиусы шаров под текущий стиль. */
@@ -115,6 +145,16 @@ struct Scene::Impl {
         mapper->SetRenderBonds(style != render::Style::SpaceFill);
         mapper->Modified();
         builtStyle = static_cast<int>(style);
+
+        // Радиус выборки затенения. Должен доставать от одного атома до
+        // соседнего, иначе в объёмной модели щели не потемнеют, но и не
+        // больше того: на слишком большом радиусе выборка становится
+        // разреженной и по шарам идёт зерно.
+        double biggest = 0.3;
+        for (const chem::Atom& atom : analysis->molecule.atoms) {
+            biggest = std::max(biggest, view.atomRadius(atom.el));
+        }
+        frame.renderer()->SetSSAORadius(biggest * 0.8);
     }
 
     /**
@@ -180,6 +220,37 @@ void Scene::draw(HDC target, const render::MoleculeRenderer& view) {
     impl->renderMs = milliseconds(t0, t1);
     impl->transferMs = milliseconds(t1, t2);
 
+}
+
+std::wstring Scene::saveImage(const render::MoleculeRenderer& view) {
+    if (impl->analysis == nullptr) return L"";
+    const render::CameraParams cam = view.camera();
+    const int width = static_cast<int>(cam.viewport.w + 0.5);
+    if (width <= 0) return L"";
+
+    // Снимок должен годиться для печати: не меньше 3200 пикселей по ширине.
+    // Больше шестикратного увеличения не берём — смысла нет, а памяти
+    // на кадр уходит уже под сотню мегабайт.
+    const int scale = std::max(2, std::min(6, (3200 + width - 1) / width));
+
+    wchar_t folder[MAX_PATH] = {};
+    if (SHGetFolderPathW(nullptr, CSIDL_MYPICTURES, nullptr, 0, folder) != S_OK) return L"";
+
+    // Имя латиницей: путь уходит в VTK, и с кириллицей в имени файла она
+    // ведёт себя по-разному в зависимости от сборки.
+    std::string id = "molecule";
+    if (impl->analysis->molecule.meta != nullptr && !impl->analysis->molecule.meta->id.empty()) {
+        id = impl->analysis->molecule.meta->id;
+    }
+    const std::wstring path = std::wstring(folder) + L"\\molview-" + render::toWide(id) + L".png";
+
+    const render::Rgb back = render::theme::BACKGROUND;
+    if (!impl->frame.saveImage(render::toUtf8(path), scale, static_cast<unsigned char>(back.r),
+                               static_cast<unsigned char>(back.g),
+                               static_cast<unsigned char>(back.b))) {
+        return L"";
+    }
+    return path;
 }
 
 double Scene::lastRenderMs() const { return impl->renderMs; }

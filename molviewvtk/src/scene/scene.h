@@ -21,6 +21,7 @@
 #include <windows.h>
 
 #include <memory>
+#include <string>
 
 #include "chem/types.h"
 #include "render/renderer.h"
@@ -43,6 +44,13 @@ public:
      * единственный источник истины.
      */
     void draw(HDC target, const render::MoleculeRenderer& view);
+
+    /**
+     * Снимок сцены в PNG для записки и презентации. Путь выбирается сам —
+     * каталог «Изображения» и имя по названию молекулы; он же возвращается,
+     * чтобы программе было что показать. Пусто — не получилось.
+     */
+    std::wstring saveImage(const render::MoleculeRenderer& view);
 
     /** Замеры последнего кадра в миллисекундах — для отладки. */
     double lastRenderMs() const;

@@ -418,6 +418,7 @@ void Panels::drawToolbar(Gdiplus::Graphics& g, Fonts& fonts, const render::ViewO
 
         {"Вращение", Action::ToggleOption, static_cast<int>(Option::AutoRotate), options.autoRotate, false},
         {"Сброс вида", Action::ResetView, 0, false, false},
+        {"Снимок", Action::SaveImage, 0, false, false},
     };
 
     // ширины считаются заранее: панель переносится по строкам, чтобы на узком

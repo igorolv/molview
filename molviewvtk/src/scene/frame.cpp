@@ -1,5 +1,8 @@
 #include "scene/frame.h"
 
+#include <vtkPNGWriter.h>
+#include <vtkWindowToImageFilter.h>
+
 #include <algorithm>
 
 namespace scene {
@@ -16,6 +19,20 @@ Frame::Frame() {
 
     ren->SetBackground(0.0, 0.0, 0.0);
     ren->SetBackgroundAlpha(0.0);
+
+    // Затенение в углублениях между атомами. Главный источник ощущения
+    // объёма и единственное, чего принципиально не мог собственный рендер:
+    // там объём изображался нарисованным бликом, не зависящим от соседей.
+    // Радиус выборки задаётся в ангстремах и подбирается под стиль модели,
+    // см. Scene::Impl::buildRadii.
+    ren->SetUseSSAO(true);
+    ren->SetSSAOBias(0.02);
+    ren->SetSSAOKernelSize(64);
+    ren->SetSSAOBlur(true);
+    // Края шаров без сглаживания заметно лестничные, а вторая версия
+    // сглаживала их средствами GDI+ — без этого третья выглядела бы хуже
+    // предшественницы.
+    ren->SetUseFXAA(true);
 }
 
 Frame::~Frame() { releaseSurface(); }
@@ -94,6 +111,38 @@ void Frame::render() {
         }
     }
     ready = true;
+}
+
+bool Frame::saveImage(const std::string& utf8Path, int scale, unsigned char r, unsigned char g,
+                      unsigned char b) {
+    if (scale < 1) scale = 1;
+    const int keepWidth = frameWidth;
+    const int keepHeight = frameHeight;
+
+    // Прозрачный фон годится для наложения на сияние от GDI+, но не для файла.
+    ren->SetBackground(r / 255.0, g / 255.0, b / 255.0);
+    ren->SetBackgroundAlpha(1.0);
+    window->SetSize(keepWidth * scale, keepHeight * scale);
+    window->Render();
+
+    vtkNew<vtkWindowToImageFilter> grab;
+    grab->SetInput(window);
+    grab->SetInputBufferTypeToRGB();
+    grab->ReadFrontBufferOff();
+    grab->Update();
+
+    vtkNew<vtkPNGWriter> writer;
+    writer->SetFileName(utf8Path.c_str());
+    writer->SetInputConnection(grab->GetOutputPort());
+    writer->Write();
+    const bool ok = writer->GetErrorCode() == 0;
+
+    ren->SetBackground(0.0, 0.0, 0.0);
+    ren->SetBackgroundAlpha(0.0);
+    window->SetSize(keepWidth, keepHeight);
+    // Кадр на экране остался от увеличенного рендера — перерисовываем.
+    render();
+    return ok;
 }
 
 void Frame::blendTo(HDC target, int x, int y) {

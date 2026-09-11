@@ -461,6 +461,20 @@ void Window::perform(const Hotspot& spot) {
             renderer.resetView();
             break;
 
+        case Action::SaveImage: {
+            // Действие редкое и явное, поэтому окно с подтверждением уместно:
+            // иначе непонятно, произошло ли вообще что-нибудь и куда смотреть.
+            const std::wstring path = scene.saveImage(renderer);
+            if (path.empty()) {
+                MessageBoxW(hwnd, L"Не удалось сохранить снимок.", L"Строение молекул",
+                            MB_ICONWARNING);
+            } else {
+                MessageBoxW(hwnd, (L"Снимок сохранён:\n" + path).c_str(), L"Строение молекул",
+                            MB_ICONINFORMATION);
+            }
+            break;
+        }
+
         case Action::ShowHelp:
             setHelpVisible(true);
             break;

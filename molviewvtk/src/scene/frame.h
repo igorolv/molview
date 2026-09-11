@@ -47,6 +47,14 @@ public:
     /** Наложить последний кадр на растр приёмника в точке (x, y). */
     void blendTo(HDC target, int x, int y);
 
+    /**
+     * Снимок для печати: кадр рисуется увеличенным в scale раз и на
+     * НЕПРОЗРАЧНОМ фоне — иначе в файле вместо сияния будет дыра.
+     * Размер и прозрачность восстанавливаются, путь в UTF-8.
+     */
+    bool saveImage(const std::string& utf8Path, int scale, unsigned char r, unsigned char g,
+                   unsigned char b);
+
     int width() const { return frameWidth; }
     int height() const { return frameHeight; }
 

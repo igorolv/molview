@@ -43,6 +43,7 @@ find_package(VTK REQUIRED COMPONENTS
     CommonCore
     CommonDataModel
     DomainsChemistry
+    IOImage
     RenderingCore
     RenderingOpenGL2
     RenderingFreeType
@@ -53,7 +54,7 @@ file(GLOB GUI_SRC CONFIGURE_DEPENDS src/render/*.cpp src/scene/*.cpp src/ui/*.cp
 add_executable(molview WIN32 ${GUI_SRC} src/main.cpp)
 # msimg32 — ради AlphaBlend, которым кадр VTK ложится на фон от GDI+.
 target_link_libraries(molview PRIVATE chem ${VTK_LIBRARIES}
-                      gdiplus comctl32 gdi32 msimg32 user32 ole32)
+                      gdiplus comctl32 gdi32 msimg32 shell32 user32 ole32)
 
 # WIN32 выше даёт -mwindows (программа без консоли за спиной), а точка входа
 # у неё wWinMain с широкими строками — за это отвечает -municode.
