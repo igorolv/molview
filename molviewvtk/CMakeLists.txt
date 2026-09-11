@@ -71,7 +71,7 @@ vtk_module_autoinit(TARGETS molview MODULES ${VTK_LIBRARIES})
 # ── проверки ядра ───────────────────────────────────────────────────────
 # Консольные, про Windows не знают, поэтому WIN32 у них нет.
 enable_testing()
-foreach(name selftest smilestest)
+foreach(name selftest smilestest orbitaltest)
     add_executable(${name} tests/${name}.cpp)
     target_link_libraries(${name} PRIVATE chem)
     target_include_directories(${name} PRIVATE tests)

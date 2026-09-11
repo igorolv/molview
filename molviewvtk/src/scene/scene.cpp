@@ -5,8 +5,11 @@
 #include <vtkDataSetAttributes.h>
 #include <vtkPointData.h>
 #include <vtkCamera.h>
+#include <vtkAppendPolyData.h>
 #include <vtkBlueObeliskData.h>
 #include <vtkFloatArray.h>
+#include <vtkFlyingEdges3D.h>
+#include <vtkImageData.h>
 #include <vtkLightKit.h>
 #include <vtkMolecule.h>
 #include <vtkMoleculeMapper.h>
@@ -16,6 +19,7 @@
 #include <vtkPolyDataMapper.h>
 #include <vtkPeriodicTable.h>
 #include <vtkProperty.h>
+#include <vtkSmartPointer.h>
 #include <vtkTubeFilter.h>
 #include <vtkUnsignedCharArray.h>
 
@@ -25,6 +29,7 @@
 #include <cmath>
 #include <vector>
 
+#include "chem/orbital.h"
 #include "chem/periodic.h"
 #include "chem/vec.h"
 #include "render/palette.h"
@@ -36,6 +41,23 @@ namespace scene {
 namespace {
 
 constexpr double BOND_RADIUS = 0.115;  // как в собственном рендере
+
+// --- орбитали ---------------------------------------------------------------
+// Уровни двух изоповерхностей — в долях от наибольшего и от наименьшего
+// значения ψ на этой же сетке, каждый от своего.
+//
+// Доли, а не абсолютные величины: у sp, sp² и sp³ разные коэффициенты при s,
+// а значит и разная амплитуда. Порознь — потому что обратный лепесток слабее
+// переднего вдвое у sp³ и вчетверо у sp: на общем уровне он либо не появится
+// вовсе, либо заставит опустить уровень так, что передние лепестки четырёх
+// sp³-орбиталей сольются в шар. Оба значения подобраны глазами на воде,
+// нитрат-ионе и углекислом газе.
+constexpr double ORBITAL_ISO_PLUS = 0.45;
+constexpr double ORBITAL_ISO_MINUS = 0.55;
+// Обратный лепесток и полупрозрачным читается хорошо, а передний на нём же
+// теряется — он крупнее и его больше перекрывают соседние.
+constexpr double ORBITAL_OPACITY_PLUS = 0.55;
+constexpr double ORBITAL_OPACITY_MINUS = 0.45;
 
 double milliseconds(LARGE_INTEGER from, LARGE_INTEGER to) {
     LARGE_INTEGER freq;
@@ -62,6 +84,35 @@ struct Scene::Impl {
     vtkNew<vtkPolyData> wedgeMesh;
     vtkNew<vtkPolyDataMapper> wedgeMapper;
     vtkNew<vtkActor> wedgeActor;
+
+    /**
+     * Изоповерхности гибридных орбиталей ОДНОГО атома.
+     *
+     * Знаки разведены по двум актёрам: у них разный цвет и разная
+     * прозрачность, одним проходом vtkFlyingEdges3D такого не выйдет. А вот
+     * гибриды одного знака сшиваются в одного актёра через
+     * vtkAppendPolyData — и дело не в опрятности. Прозрачность рисуется
+     * послойно, и каждый слой заново обходит ВСЕХ прозрачных актёров:
+     * четыре орбитали воды — это восемь актёров против двух, то есть вчетверо
+     * больше вызовов отрисовки на тот же кадр.
+     */
+    struct OrbitalSurface {
+        // Поля и контуры живут ровно затем, чтобы конвейер до них дотянулся;
+        // vtkNew в вектор не кладётся, поэтому умные указатели.
+        std::vector<vtkSmartPointer<vtkImageData>> fields;
+        std::vector<vtkSmartPointer<vtkFlyingEdges3D>> contours;
+        vtkNew<vtkAppendPolyData> positive;
+        vtkNew<vtkAppendPolyData> negative;
+        vtkNew<vtkPolyDataMapper> positiveMapper;
+        vtkNew<vtkPolyDataMapper> negativeMapper;
+        vtkNew<vtkActor> positiveActor;
+        vtkNew<vtkActor> negativeActor;
+    };
+    // unique_ptr, а не сами объекты: vtkNew внутри не копируется и не
+    // перемещается, поэтому в vector структура целиком не влезает.
+    std::vector<std::unique_ptr<OrbitalSurface>> orbitals;
+    /** Набор, под который построены поверхности — чтобы не считать их заново. */
+    std::vector<render::OrbitalSet> builtOrbitals;
 
     const chem::Analysis* analysis = nullptr;
     /** Стиль, под который построены радиусы. -1 — ещё ни под какой. */
@@ -271,6 +322,117 @@ struct Scene::Impl {
     }
 
     /**
+     * Изоповерхности гибридных орбиталей.
+     *
+     * Во второй версии лепестки рисовались кривыми Безье «на глаз». Здесь
+     * ядро считает волновую функцию в узлах куба (chem/orbital.cpp), сетка
+     * кладётся в vtkImageData, и vtkFlyingEdges3D проводит по ней две
+     * поверхности: ψ = +iso и ψ = −iso. Разные знаки — разного цвета, как
+     * орбитали и рисуют в учебниках, только посчитанные.
+     *
+     * Считать это каждый кадр незачем: от поворота камеры сетка не меняется.
+     * Пересчёт идёт, только когда сменился набор орбиталей — другая молекула,
+     * другой выбранный атом, включили или выключили показ.
+     */
+    void buildOrbitals(const render::MoleculeRenderer& view) {
+        const std::vector<render::OrbitalSet> sets = view.orbitals();
+        if (sameOrbitals(sets, builtOrbitals)) return;
+        builtOrbitals = sets;
+
+        for (const std::unique_ptr<OrbitalSurface>& old : orbitals) {
+            frame.renderer()->RemoveActor(old->positiveActor);
+            frame.renderer()->RemoveActor(old->negativeActor);
+        }
+        orbitals.clear();
+
+        for (const render::OrbitalSet& set : sets) {
+            const std::vector<chem::OrbitalGrid> grids =
+                chem::orbitalGrids(set.kind, set.dirs, set.center, set.options);
+            auto surface = std::make_unique<OrbitalSurface>();
+
+            for (const chem::OrbitalGrid& grid : grids) {
+                const double plus = ORBITAL_ISO_PLUS * grid.highest();
+                const double minus = ORBITAL_ISO_MINUS * grid.lowest();
+                if (!(plus > 0)) continue;
+
+                vtkNew<vtkFloatArray> scalars;
+                scalars->SetName("psi");
+                scalars->SetNumberOfComponents(1);
+                scalars->SetNumberOfTuples(static_cast<vtkIdType>(grid.values.size()));
+                for (std::size_t n = 0; n < grid.values.size(); n++) {
+                    scalars->SetValue(static_cast<vtkIdType>(n), static_cast<float>(grid.values[n]));
+                }
+                auto field = vtkSmartPointer<vtkImageData>::New();
+                field->SetDimensions(grid.size, grid.size, grid.size);
+                field->SetOrigin(grid.center.x - grid.half, grid.center.y - grid.half,
+                                 grid.center.z - grid.half);
+                field->SetSpacing(grid.step(), grid.step(), grid.step());
+                field->GetPointData()->SetScalars(scalars);
+                surface->fields.push_back(field);
+
+                addContour(*surface, field, plus, *surface->positive);
+                addContour(*surface, field, minus, *surface->negative);
+            }
+            if (surface->fields.empty()) continue;
+
+            setupSurface(*surface->positive, *surface->positiveMapper, *surface->positiveActor,
+                         render::theme::ORBITAL, ORBITAL_OPACITY_PLUS);
+            setupSurface(*surface->negative, *surface->negativeMapper, *surface->negativeActor,
+                         render::theme::ORBITAL_MINUS, ORBITAL_OPACITY_MINUS);
+            orbitals.push_back(std::move(surface));
+        }
+    }
+
+    /** Изоповерхность одного уровня, приложенная к общей сшивке своего знака. */
+    void addContour(OrbitalSurface& surface, vtkImageData* field, double level,
+                    vtkAppendPolyData& into) {
+        auto edges = vtkSmartPointer<vtkFlyingEdges3D>::New();
+        edges->SetInputData(field);
+        edges->SetNumberOfContours(1);
+        edges->SetValue(0, level);
+        // Нормали от градиента самой функции, а не от треугольников: с ними
+        // поверхность выглядит гладкой при куда более грубой сетке.
+        edges->ComputeNormalsOn();
+        edges->ComputeGradientsOff();
+        edges->ComputeScalarsOff();
+        into.AddInputConnection(edges->GetOutputPort());
+        surface.contours.push_back(edges);
+    }
+
+    /** Актёр одного знака: цвет, прозрачность, свет. */
+    void setupSurface(vtkAppendPolyData& source, vtkPolyDataMapper& mapper, vtkActor& actor,
+                      const render::Rgb& color, double opacity) {
+        mapper.SetInputConnection(source.GetOutputPort());
+        mapper.ScalarVisibilityOff();
+        actor.SetMapper(&mapper);
+        actor.GetProperty()->SetColor(color.r / 255.0, color.g / 255.0, color.b / 255.0);
+        actor.GetProperty()->SetOpacity(opacity);
+        // Изнутри лепестка видна его обратная сторона, и без освещения
+        // обратных граней она выглядит чёрной дырой.
+        actor.GetProperty()->BackfaceCullingOff();
+        actor.GetProperty()->SetAmbient(0.25);
+        actor.GetProperty()->SetDiffuse(0.75);
+        actor.GetProperty()->SetSpecular(0.2);
+        frame.renderer()->AddActor(&actor);
+    }
+
+    /** Совпадает ли набор орбиталей с тем, под который уже построены сетки. */
+    static bool sameOrbitals(const std::vector<render::OrbitalSet>& a,
+                             const std::vector<render::OrbitalSet>& b) {
+        if (a.size() != b.size()) return false;
+        for (std::size_t i = 0; i < a.size(); i++) {
+            if (a[i].kind != b[i].kind || a[i].dirs.size() != b[i].dirs.size()) return false;
+            if (std::abs(a[i].options.zeff - b[i].options.zeff) > 1e-9) return false;
+            if (std::abs(a[i].options.half - b[i].options.half) > 1e-9) return false;
+            if (chem::dist(a[i].center, b[i].center) > 1e-9) return false;
+            for (std::size_t k = 0; k < a[i].dirs.size(); k++) {
+                if (chem::dist(a[i].dirs[k], b[i].dirs[k]) > 1e-9) return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * Камера VTK по параметрам собственного рендера.
      *
      * Собственная проекция устроена так: c = R·p — точка в системе камеры,
@@ -307,6 +469,7 @@ Scene::~Scene() = default;
 void Scene::setAnalysis(const chem::Analysis* analysis) {
     impl->analysis = analysis;
     impl->builtMolecule = false;
+    impl->builtOrbitals.clear();
 }
 
 void Scene::draw(HDC target, const render::MoleculeRenderer& view) {
@@ -322,6 +485,7 @@ void Scene::draw(HDC target, const render::MoleculeRenderer& view) {
     LARGE_INTEGER t0, t1, t2;
     QueryPerformanceCounter(&t0);
     impl->buildArcs(view);
+    impl->buildOrbitals(view);
     impl->frame.resize(width, height);
     impl->applyCamera(cam);
     impl->frame.render();

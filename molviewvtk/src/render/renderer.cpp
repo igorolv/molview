@@ -22,6 +22,14 @@ using chem::Vec3;
 namespace {
 
 constexpr double ATOM_RADIUS_FACTOR = 0.34;
+/** Узлов по ребру расчётной сетки орбитали. Нечётное — см. chem::OrbitalOptions. */
+constexpr int ORBITAL_GRID = 65;
+/**
+ * Насколько орбиталь уходит от атома, в ковалентных радиусах. Передний
+ * лепесток на выбранном уровне кончается примерно на 1,4 радиуса; берём 2
+ * с запасом, чтобы плоскости отсечения камеры не срезали его край.
+ */
+constexpr double ORBITAL_REACH = 2.0;
 constexpr double BOND_RADIUS = 0.115;
 constexpr double ENTRY_DURATION = 750;
 
@@ -152,8 +160,16 @@ double MoleculeRenderer::sceneRadius() const {
     for (const chem::Atom& atom : analysis->molecule.atoms) {
         r = std::max(r, len(atom.pos) + atomRadius(atom.el));
     }
-    if (opts.showOrbitals) r += 0.5;
-    else if (opts.showLonePairs) r += 0.35;
+    // Орбиталь уходит от атома дальше его шара, и насколько — зависит от
+    // элемента: её размер подогнан под ковалентный радиус.
+    if (opts.showOrbitals && analysis->atoms.size() == analysis->molecule.atoms.size()) {
+        for (const chem::AtomAnalysis& info : analysis->atoms) {
+            if (!hasOrbitals(info)) continue;
+            r = std::max(r, len(analysis->molecule.atoms[info.id].pos) +
+                                ORBITAL_REACH * std::max(0.3, chem::element(info.el).r));
+        }
+    }
+    if (opts.showLonePairs) r += 0.35;
     return r + 0.3;
 }
 
@@ -238,12 +254,12 @@ void MoleculeRenderer::renderOverlays(Gdiplus::Graphics& g, Fonts& fonts, double
     if (analysis == nullptr) return;
     const double progress = entryStart == 0 ? 1.0 : clamp01((timeMs - entryStart) / ENTRY_DURATION);
 
-    // Неподелённые пары и орбитали пока рисуются здесь, а значит ложатся
-    // ПОВЕРХ шаров, даже когда должны быть за ними. Сортировка по глубине
-    // вместе с атомами вернётся на этапе 4, когда они переедут в VTK.
+    // Облака неподелённых пар остались здесь: облако — почти точка, и ему
+    // хватает аналитической проверки видимости (раздел 9.3 задания).
+    // Орбитали отсюда ушли совсем — их считает chem/orbital и показывает
+    // сцена изоповерхностями.
     std::vector<Primitive> primitives;
     if (opts.showLonePairs) collectLonePairs(primitives, progress);
-    if (opts.showOrbitals) collectOrbitals(primitives, progress);
     std::stable_sort(primitives.begin(), primitives.end(),
                      [](const Primitive& a, const Primitive& b) { return a.depth > b.depth; });
     for (const Primitive& p : primitives) p.draw(g);
@@ -528,78 +544,53 @@ void MoleculeRenderer::collectLonePairs(std::vector<Primitive>& out, double prog
 // Гибридные орбитали
 // ---------------------------------------------------------------------------
 
-void MoleculeRenderer::collectOrbitals(std::vector<Primitive>& out, double progress) const {
-    if (progress < 0.55) return;
-    const double fade = std::min(1.0, (progress - 0.55) / 0.35);
+bool MoleculeRenderer::hasOrbitals(const chem::AtomAnalysis& info) const {
+    // Отбор тот же, что был у нарисованных «на глаз» лепестков: у водорода
+    // гибридизации нет, а у концевых атомов орбитали только засоряют
+    // картинку — форму молекулы задают орбитали ЦЕНТРАЛЬНЫХ атомов.
+    if (info.steric < 2 || info.el == "H") return false;
+    if (selectedAtom != -1) return selectedAtom == info.id;
+    return info.isCentral;
+}
+
+std::vector<OrbitalSet> MoleculeRenderer::orbitals() const {
+    std::vector<OrbitalSet> sets;
+    if (analysis == nullptr || !opts.showOrbitals) return sets;
+    if (analysis->atoms.size() != analysis->molecule.atoms.size()) return sets;
+
+    // Изоповерхность — это сетка в четверть миллиона узлов и два прохода
+    // vtkFlyingEdges3D на каждую орбиталь. Показывать так все центральные
+    // атомы разом и незачем: полупрозрачные лепестки соседей налезают друг
+    // на друга и превращаются в муть. Ограничение не мешает разглядывать
+    // любой атом — щелчок по нему оставляет на экране только его орбитали.
+    const std::size_t LIMIT = 8;
+    std::size_t shown = 0;
 
     for (const chem::AtomAnalysis& info : analysis->atoms) {
-        if (info.steric < 2 || info.el == "H") continue;
-        if (selectedAtom != -1 && selectedAtom != info.id) continue;
-        if (selectedAtom == -1 && !info.isCentral) continue;
+        if (!hasOrbitals(info) || info.orbitalDirs.empty()) continue;
+        if (shown + info.orbitalDirs.size() > LIMIT && shown > 0) break;
 
-        const chem::Atom& atom = analysis->molecule.atoms[info.id];
-        const double lobeLength = 1.15;
-
-        for (std::size_t k = 0; k < info.orbitalDirs.size(); k++) {
-            const bool isLonePair = static_cast<int>(k) >= info.sigma;
-            const Projected tip = project(add(atom.pos, mul(info.orbitalDirs[k], lobeLength)));
-            const Projected base = project(atom.pos);
-            if (!tip.visible || !base.visible) continue;
-
-            const double dx = tip.x - base.x;
-            const double dy = tip.y - base.y;
-            const double l = std::hypot(dx, dy);
-            const double ux = l > 0.001 ? dx / l : 1;
-            const double uy = l > 0.001 ? dy / l : 0;
-            const double px = -uy;
-            const double py = ux;
-            const double width = 0.34 * base.scale;
-            const Rgb color = isLonePair ? theme::LONE_PAIR : theme::ORBITAL;
-            const double alpha = 0.30 * fade;
-
-            Primitive prim;
-            prim.depth = (tip.z + base.z) / 2 + 0.01;
-            prim.draw = [=](Gdiplus::Graphics& g) {
-                const auto f = [](double v) { return static_cast<Gdiplus::REAL>(v); };
-
-                // передний лепесток — две кривые Безье, сходящиеся в остриё
-                Gdiplus::GraphicsPath path;
-                path.AddBezier(f(base.x), f(base.y),
-                               f(base.x + ux * l * 0.28 + px * width), f(base.y + uy * l * 0.28 + py * width),
-                               f(base.x + ux * l * 0.82 + px * width * 0.85), f(base.y + uy * l * 0.82 + py * width * 0.85),
-                               f(tip.x), f(tip.y));
-                path.AddBezier(f(tip.x), f(tip.y),
-                               f(base.x + ux * l * 0.82 - px * width * 0.85), f(base.y + uy * l * 0.82 - py * width * 0.85),
-                               f(base.x + ux * l * 0.28 - px * width), f(base.y + uy * l * 0.28 - py * width),
-                               f(base.x), f(base.y));
-                path.CloseFigure();
-
-                fillPathLinear(g, path, base.x, base.y, tip.x, tip.y, {
-                    {0.0, toColor(color, alpha * 0.35)},
-                    {0.55, toColor(color, alpha)},
-                    {1.0, toColor(color, alpha * 0.15)},
-                });
-                Gdiplus::Pen pen(toColor(color, std::min(1.0, alpha * 1.3)), 1.0f);
-                g.DrawPath(&pen, &path);
-
-                // малый «задний» лепесток гибридной орбитали
-                const double backLen = l * 0.26;
-                Gdiplus::GraphicsPath back;
-                back.AddBezier(f(base.x), f(base.y),
-                               f(base.x - ux * backLen * 0.5 + px * width * 0.5), f(base.y - uy * backLen * 0.5 + py * width * 0.5),
-                               f(base.x - ux * backLen + px * width * 0.2), f(base.y - uy * backLen + py * width * 0.2),
-                               f(base.x - ux * backLen), f(base.y - uy * backLen));
-                back.AddBezier(f(base.x - ux * backLen), f(base.y - uy * backLen),
-                               f(base.x - ux * backLen - px * width * 0.2), f(base.y - uy * backLen - py * width * 0.2),
-                               f(base.x - ux * backLen * 0.5 - px * width * 0.5), f(base.y - uy * backLen * 0.5 - py * width * 0.5),
-                               f(base.x), f(base.y));
-                back.CloseFigure();
-                Gdiplus::SolidBrush brush(toColor(color, alpha * 0.35));
-                g.FillPath(&brush, &back);
-            };
-            out.push_back(std::move(prim));
-        }
+        OrbitalSet set;
+        set.center = analysis->molecule.atoms[info.id].pos;
+        set.kind = chem::orbitalForSteric(info.steric);
+        set.dirs = info.orbitalDirs;
+        set.options.size = ORBITAL_GRID;
+        set.options.radial = chem::Radial::Slater;
+        // Радиус наибольшей плотности p-части — 4/Z боровских радиусов;
+        // приравниваем его ковалентному радиусу элемента. Тогда лепесток
+        // дотягивается примерно до соседнего атома, как его и рисуют в
+        // учебнике, а разные элементы отличаются размером орбитали так же,
+        // как отличаются размером сами.
+        set.options.zeff = 4 * chem::BOHR / std::max(0.3, chem::element(info.el).r);
+        // Куб должен вмещать обе изоповерхности с запасом, иначе они упрутся
+        // в его стенку и останутся незакрытыми. Двенадцати боровских радиусов
+        // хватает: на такой длине |ψ| вдесятеро ниже уровня.
+        set.options.half = 12 * chem::BOHR / set.options.zeff;
+        shown += set.dirs.size();
+        sets.push_back(std::move(set));
+        if (shown >= LIMIT) break;
     }
+    return sets;
 }
 
 // ---------------------------------------------------------------------------

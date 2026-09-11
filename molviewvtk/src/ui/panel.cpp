@@ -363,7 +363,12 @@ void Panels::drawLegend(Gdiplus::Graphics& g, Fonts& fonts, const AppState& stat
         rows.emplace_back(theme::ANGLE_ARC_RING, "угол задан циклом");
     }
     if (options.showLonePairs) rows.emplace_back(theme::LONE_PAIR, "неподелённая пара");
-    if (options.showOrbitals) rows.emplace_back(theme::ORBITAL, "гибридная орбиталь");
+    // Два знака волновой функции — две поверхности разного цвета, и без
+    // подписи фиолетовое с оранжевым читается как два разных предмета.
+    if (options.showOrbitals) {
+        rows.emplace_back(theme::ORBITAL, "орбиталь: ψ > 0");
+        rows.emplace_back(theme::ORBITAL_MINUS, "орбиталь: ψ < 0");
+    }
     if (options.showDipole) rows.emplace_back(theme::DIPOLE, "дипольный момент");
 
     const Font* font = fonts.ui(11);

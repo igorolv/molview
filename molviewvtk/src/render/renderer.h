@@ -13,6 +13,7 @@
 #include <string>
 #include <vector>
 
+#include "chem/orbital.h"
 #include "chem/types.h"
 #include "chem/vec.h"
 #include "render/draw.h"
@@ -72,6 +73,26 @@ struct AngleArc {
     double alpha = 1;
 };
 
+/**
+ * Гибридные орбитали одного атома — задание для сцены: она считает по ним
+ * волновые функции и проводит изоповерхности. Отбор атомов делает вид, там
+ * же, где он делается для дуг углов.
+ *
+ * Направления собраны в один набор не для удобства, а ради скорости:
+ * chem::orbitalGrids считает радиальную часть один раз на все направления
+ * атома, и это втрое быстрее, чем считать каждый гибрид отдельно.
+ */
+struct OrbitalSet {
+    /** Центр атома, Å. */
+    chem::Vec3 center;
+    /** Тип гибрида — от него зависят коэффициенты при s и p. */
+    chem::Orbital kind = chem::Orbital::Sp3;
+    /** Единичные направления гибридов (и связывающих, и занятых парами). */
+    std::vector<chem::Vec3> dirs;
+    /** Размер сетки, заряд ядра, вид радиальной части. */
+    chem::OrbitalOptions options;
+};
+
 /** Облако неподелённой пары. */
 struct LonePairCloud {
     chem::Vec3 position;
@@ -112,6 +133,19 @@ public:
     std::vector<AngleArc> angleArcs() const;
 
     /**
+     * Гибридные орбитали для сцены — по одному набору на атом.
+     *
+     * Здесь же выбираются два параметра ПОКАЗА, которых нет в задании и не
+     * должно быть в ядре: эффективный заряд ядра (размер орбитали) и вид
+     * радиальной части 2s (её форма). Оба разобраны у chem::OrbitalOptions
+     * и chem::Radial; коротко — заряд подбирается так, чтобы радиус
+     * наибольшей плотности p-части совпал с ковалентным радиусом элемента,
+     * а радиальная часть берётся слейтеровская, потому что водородоподобная
+     * даёт верную, но нерисуемую картинку.
+     */
+    std::vector<OrbitalSet> orbitals() const;
+
+    /**
      * Радиус шара, Å. Наружу нужен затем, чтобы VTK строила шары ровно того же
      * размера: подписи и дуги углов рассчитаны на эти радиусы.
      */
@@ -150,6 +184,9 @@ private:
         std::function<void(Gdiplus::Graphics&)> draw;
     };
 
+    /** Рисуются ли у этого атома гибридные орбитали. */
+    bool hasOrbitals(const chem::AtomAnalysis& info) const;
+
     double sceneRadius() const;
     double cameraDistance() const;
     double focal() const;
@@ -160,7 +197,6 @@ private:
     void collectAtoms(std::vector<Primitive>& out, double progress, double timeMs) const;
     void collectBonds(std::vector<Primitive>& out, double progress) const;
     void collectLonePairs(std::vector<Primitive>& out, double progress) const;
-    void collectOrbitals(std::vector<Primitive>& out, double progress) const;
 
     void drawAngles(Gdiplus::Graphics& g, Fonts& fonts, double progress);
     void drawLinearAngle(Gdiplus::Graphics& g, Fonts& fonts, const chem::AngleRecord& record,
